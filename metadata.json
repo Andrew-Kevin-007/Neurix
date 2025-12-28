@@ -1,0 +1,5 @@
+{
+  "name": "NEURIX Agent",
+  "description": "A transparent autonomous agent framework that visualizes workflow generation, execution, and reasoning traces using the Gemini API.",
+  "requestFramePermissions": []
+}

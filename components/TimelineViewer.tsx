@@ -13,7 +13,7 @@ const TimelineViewer: React.FC<TimelineViewerProps> = ({ events, agents }) => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [events]);
 
-  const getAgent = (id: string) => Object.values(agents).find(a => a.id === id);
+  const getAgent = (id: string) => (Object.values(agents) as AgentIdentity[]).find(a => a.id === id);
   
   const getAgentColorHex = (twClass: string) => {
       if (twClass.includes('accent')) return '#A855F7';

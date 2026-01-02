@@ -7,6 +7,7 @@ import TimelineViewer from './components/TimelineViewer';
 import AgentStatusDisplay from './components/AgentStatus';
 import PerformanceGraph from './components/PerformanceGraph';
 import SystemMonitor from './components/SystemMonitor';
+import OnboardingModal from './components/OnboardingModal';
 
 // --- AGENT DEFINITIONS ---
 const AGENTS: Record<string, AgentIdentity> = {
@@ -18,6 +19,12 @@ const AGENTS: Record<string, AgentIdentity> = {
   ECHO: { id: 'echo-g', role: 'SPECIALIST', name: 'ECHO', version: '2.2', color: 'text-yellow-400', capabilities: ['CREATION', 'DECISION'] },
   EXECUTOR: { id: 'ion-op', role: 'EXECUTOR', name: 'ION', version: '1.9', color: 'text-neurix-success', capabilities: ['ALL'] },
 };
+
+const SUGGESTIONS = [
+    { label: "Code: Snake Game", text: "Write a complete Python script for a Snake game using the pygame library." },
+    { label: "Research: Quantum Batteries", text: "Research the latest breakthroughs in solid-state batteries and summarize for a technical audience." },
+    { label: "Analysis: EV Market", text: "Analyze current trends in the EV market and suggest a hypothetical product strategy." }
+];
 
 const CONFIDENCE_THRESHOLD = 0.8;
 const createInitialMetrics = (): AgentMetrics => ({ stepsExecuted: 0, averageConfidence: 0, verificationPassRate: 0, tokenUsage: 0, _totalConfidence: 0, _thoughtCount: 0, _verificationAttempts: 0, _verificationSuccesses: 0 });
@@ -41,6 +48,7 @@ export default function App() {
   // Multimodal & Control State
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [hasVisited, setHasVisited] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Refs
@@ -81,18 +89,15 @@ export default function App() {
   }, []);
 
   // Boot Sequence
-  useEffect(() => {
-    const bootSequence = async () => {
-        addLog('INFO', 'Initializing NEURIX Kernel v2.4...');
-        await new Promise(r => setTimeout(r, 600));
-        addLog('INFO', 'Loading Neural Modules...', { modules: ['NEXUS', 'AXION', 'HELIX', 'VORTEX'] });
-        await new Promise(r => setTimeout(r, 800));
-        addLog('INFO', 'Establishing Secure Handshake with Gemini-3...', { latency: '42ms' });
-        await new Promise(r => setTimeout(r, 600));
-        addLog('SUCCESS', 'System Online. Awaiting directive.');
-        speak("System Online. Ready for directive.");
-    };
-    bootSequence();
+  const runBootSequence = useCallback(async () => {
+    addLog('INFO', 'Initializing NEURIX Kernel v2.4...');
+    await new Promise(r => setTimeout(r, 600));
+    addLog('INFO', 'Loading Neural Modules...', { modules: ['NEXUS', 'AXION', 'HELIX', 'VORTEX'] });
+    await new Promise(r => setTimeout(r, 800));
+    addLog('INFO', 'Establishing Secure Handshake with Gemini-3...', { latency: '42ms' });
+    await new Promise(r => setTimeout(r, 600));
+    addLog('SUCCESS', 'System Online. Awaiting directive.');
+    speak("System Online. Ready for directive.");
   }, [addLog, speak]);
 
   // --- DEMO GOD MODE: FORCE FAIL ---
@@ -262,20 +267,24 @@ export default function App() {
 
   }, [triggerStepExecution, addLog, speak]);
 
-  const handleGeneratePlan = async () => {
-    if (!goal.trim()) return;
+  const handleGeneratePlan = async (customGoal?: string) => {
+    const targetGoal = customGoal || goal;
+    if (!targetGoal.trim()) return;
+    
+    if (customGoal) setGoal(customGoal); // Sync state
+
     setAgentState(AgentState.PLANNING);
     speak("Analyzing request.");
     emitTimelineEvent('PHASE_CHANGE', AGENTS.PLANNER, 'Initializing Planning Phase');
-    addLog('INFO', `Directive received: "${goal}"`);
+    addLog('INFO', `Directive received: "${targetGoal}"`);
     if (selectedImage) {
         addLog('INFO', 'Processing Visual Input matrix...');
     }
     addLog('THOUGHT', 'NEXUS Agent formulating execution strategy...', { agentName: AGENTS.PLANNER.name, agentColor: AGENTS.PLANNER.color });
 
     try {
-      const { steps, tokens } = await generateWorkflow(goal, selectedImage);
-      setWorkflow({ version: 'v1', goal, steps });
+      const { steps, tokens } = await generateWorkflow(targetGoal, selectedImage);
+      setWorkflow({ version: 'v1', goal: targetGoal, steps });
       
       updateAgentMetrics(AGENTS.PLANNER.id, { tokens, stepCompleted: true, confidence: 0.95 });
       
@@ -378,10 +387,64 @@ export default function App() {
       }
   };
 
+  const resetSystem = () => {
+      setWorkflow(null);
+      setLogs([]);
+      setTimeline([]);
+      setAgentState(AgentState.INIT);
+      setGoal('');
+      setSelectedImage(null);
+      addLog('INFO', 'System Reset. Memory cleared.');
+  };
+
+  // --- RENDER HELPERS ---
+  const renderOutput = (text: string) => {
+      // Split by code blocks
+      const parts = text.split(/(```[\s\S]*?```)/g);
+      return parts.map((part, i) => {
+         if (part.startsWith('```')) {
+             // Extract language and code
+             const match = part.match(/```(\w*)\n?([\s\S]*?)```/);
+             const lang = match ? match[1] : '';
+             const code = match ? match[2] : part.slice(3, -3);
+             return (
+                 <div key={i} className="my-3 rounded-lg bg-black/50 border border-white/10 overflow-hidden shadow-lg">
+                     <div className="px-3 py-1.5 bg-white/5 border-b border-white/5 flex justify-between items-center">
+                         <span className="text-[9px] font-mono text-neurix-400 uppercase font-bold">{lang || 'CODE'}</span>
+                         <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(code);
+                            }}
+                            className="text-[9px] text-neurix-500 hover:text-white transition-colors"
+                         >
+                            COPY
+                         </button>
+                     </div>
+                     <pre className="p-3 text-[10px] font-mono text-neurix-100 overflow-x-auto custom-scrollbar leading-relaxed">
+                        <code>{code}</code>
+                     </pre>
+                 </div>
+             )
+         }
+         return <div key={i} className="whitespace-pre-wrap">{part}</div>
+      });
+  };
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-neurix-950 text-neurix-300 font-sans selection:bg-neurix-accent/30">
       
+      {/* Onboarding Modal */}
+      {!hasVisited && (
+          <OnboardingModal 
+            agents={AGENTS} 
+            onStart={() => {
+                setHasVisited(true);
+                runBootSequence();
+            }} 
+          />
+      )}
+
       {/* LAYER 0: Background Graph */}
       <div className="absolute inset-0 z-0">
          <WorkflowGraph 
@@ -412,7 +475,7 @@ export default function App() {
                      </div>
                  </div>
                  
-                 {/* DEMO CONTROLS */}
+                 {/* CONTROLS */}
                  <div className="h-6 w-[1px] bg-white/10 mx-1" />
                  <div className="flex gap-2">
                      <button onClick={toggleMute} className={`p-2 rounded-lg border transition-all ${isMuted ? 'bg-neurix-danger/10 border-neurix-danger/30 text-neurix-danger' : 'bg-white/5 border-white/10 text-neurix-400 hover:text-white'}`}>
@@ -429,6 +492,11 @@ export default function App() {
                              ) : (
                                 <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>
                              )}
+                         </button>
+                     )}
+                     {(agentState === AgentState.COMPLETED || agentState === AgentState.FAILED) && (
+                         <button onClick={resetSystem} className="p-2 rounded-lg border bg-white/5 border-white/10 text-neurix-400 hover:text-white hover:bg-neurix-danger/20 hover:border-neurix-danger/50 hover:text-neurix-danger transition-all">
+                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                          </button>
                      )}
                  </div>
@@ -453,7 +521,7 @@ export default function App() {
              
              {/* Spotlight Input */}
              {(agentState === AgentState.INIT || agentState === AgentState.COMPLETED || agentState === AgentState.FAILED) && (
-                 <div className="w-full max-w-2xl pointer-events-auto animate-pop-in relative">
+                 <div className="w-full max-w-2xl pointer-events-auto animate-pop-in relative flex flex-col gap-4">
                      {selectedImage && (
                         <div className="absolute -top-16 left-0 bg-neurix-900 border border-white/10 p-1 rounded-lg shadow-xl animate-fade-in flex items-center gap-2">
                              <img src={`data:image/png;base64,${selectedImage}`} className="h-12 w-12 object-cover rounded" alt="Context" />
@@ -491,14 +559,28 @@ export default function App() {
                             autoFocus
                          />
                          <button 
-                            onClick={handleGeneratePlan}
+                            onClick={() => handleGeneratePlan()}
                             disabled={!goal.trim()}
                             className="h-10 px-6 rounded-xl bg-neurix-100 text-black font-semibold text-xs tracking-wide hover:bg-white transition-colors disabled:opacity-50"
                          >
                             RUN
                          </button>
                      </div>
-                     <div className="mt-4 flex justify-center gap-4 text-[10px] font-mono text-neurix-500/60 uppercase tracking-widest">
+
+                     {/* Suggestions */}
+                     <div className="flex gap-3 justify-center">
+                        {SUGGESTIONS.map((s, i) => (
+                            <button 
+                                key={i}
+                                onClick={() => handleGeneratePlan(s.text)}
+                                className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/20 text-[10px] text-neurix-400 hover:text-white transition-all text-left group max-w-[200px]"
+                            >
+                                <div className="font-bold text-neurix-accent group-hover:text-neurix-300 transition-colors mb-0.5">{s.label}</div>
+                            </button>
+                        ))}
+                     </div>
+
+                     <div className="mt-2 flex justify-center gap-4 text-[10px] font-mono text-neurix-500/60 uppercase tracking-widest">
                          <span>⌘K Commands</span>
                          <span>System Idle</span>
                          <span>Gemini-3 Flash</span>
@@ -560,7 +642,8 @@ export default function App() {
                                                  </div>
                                              </div>
                                          ) : (
-                                             <div className="whitespace-pre-wrap">{selectedStep.output}</div>
+                                             // RICH CODE RENDERING
+                                             renderOutput(selectedStep.output)
                                          )}
                                      </div>
                                  )}

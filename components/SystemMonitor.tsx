@@ -8,10 +8,10 @@ interface SystemMonitorProps {
 }
 
 const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, agents, history }) => {
-  const totalSystemTokens = Object.values(metrics).reduce((acc, m) => acc + m.tokenUsage, 0);
+  const totalSystemTokens = (Object.values(metrics) as AgentMetrics[]).reduce((acc, m) => acc + m.tokenUsage, 0);
   
   // Sort agents by token usage descending
-  const sortedAgents = Object.values(agents)
+  const sortedAgents = (Object.values(agents) as AgentIdentity[])
     .filter(a => metrics[a.id].tokenUsage > 0)
     .sort((a, b) => metrics[b.id].tokenUsage - metrics[a.id].tokenUsage);
 
@@ -135,7 +135,7 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, agents, history 
                          <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
                              {Object.entries(graphData.paths).map(([id, d]) => {
                                  // CORRECTED: Find agent by ID, not by Key
-                                 const agent = Object.values(agents).find(a => a.id === id);
+                                 const agent = (Object.values(agents) as AgentIdentity[]).find(a => a.id === id);
                                  if (!agent) return null;
                                  
                                  return (

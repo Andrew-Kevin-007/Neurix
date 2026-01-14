@@ -12,7 +12,7 @@ interface WorkflowGraphProps {
 // Visual Config
 const NODE_WIDTH = 240; 
 const NODE_HEIGHT = 90;
-const RANK_GAP = 300; // Increased gap for better growth visualization
+const RANK_GAP = 300; 
 const BRANCH_GAP = 140; 
 
 const styles = `
@@ -72,7 +72,7 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
   const containerRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ x: 0, y: 0, scale: 0.9 });
   const [isDragging, setIsDragging] = useState(false);
-  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
 
   // --- LAYOUT ENGINE ---
   const layout = useMemo(() => {
@@ -154,7 +154,7 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
               scale: 0.9 
           });
       }
-  }, [layout.nodes.length === 0]); // Only reset if previously empty to avoid jumping
+  }, [layout.nodes.length === 0]); 
 
   // Pan to Active Step
   useEffect(() => {
@@ -172,18 +172,39 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
   }, [currentStepId]);
 
   const handleWheel = (e: React.WheelEvent) => setView(v => ({ ...v, scale: Math.max(0.2, Math.min(2, v.scale - e.deltaY * 0.001)) }));
-  const handleMouseDown = (e: React.MouseEvent) => { setIsDragging(true); setLastMousePos({ x: e.clientX, y: e.clientY }); };
+  
+  // Mouse Handlers
+  const handleMouseDown = (e: React.MouseEvent) => { setIsDragging(true); setLastPos({ x: e.clientX, y: e.clientY }); };
   const handleMouseMove = (e: React.MouseEvent) => {
       if(isDragging) {
-          setView(v => ({ ...v, x: v.x + e.clientX - lastMousePos.x, y: v.y + e.clientY - lastMousePos.y }));
-          setLastMousePos({ x: e.clientX, y: e.clientY });
+          setView(v => ({ ...v, x: v.x + e.clientX - lastPos.x, y: v.y + e.clientY - lastPos.y }));
+          setLastPos({ x: e.clientX, y: e.clientY });
       }
   };
   const handleMouseUp = () => setIsDragging(false);
 
+  // Touch Handlers for Mobile
+  const handleTouchStart = (e: React.TouchEvent) => {
+      if (e.touches.length === 1) {
+          setIsDragging(true);
+          setLastPos({ x: e.touches[0].clientX, y: e.touches[0].clientY });
+      }
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+      if (isDragging && e.touches.length === 1) {
+          const touch = e.touches[0];
+          setView(v => ({ ...v, x: v.x + touch.clientX - lastPos.x, y: v.y + touch.clientY - lastPos.y }));
+          setLastPos({ x: touch.clientX, y: touch.clientY });
+      }
+  };
+  const handleTouchEnd = () => setIsDragging(false);
+
   return (
-    <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing bg-neurix-950 overflow-hidden relative"
-         onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+    <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing bg-neurix-950 overflow-hidden relative touch-none"
+         onWheel={handleWheel} 
+         onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
+         onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
+    >
         <style>{styles}</style>
         
         {/* Subtle grid background */}

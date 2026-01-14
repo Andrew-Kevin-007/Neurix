@@ -8,7 +8,6 @@ interface OnboardingModalProps {
 
 const OnboardingModal: React.FC<OnboardingModalProps> = ({ onStart, agents }) => {
   const [isOpen, setIsOpen] = useState(true);
-  const [step, setStep] = useState(0); // 0: Intro, 1: Agents
 
   const handleStart = () => {
     setIsOpen(false);
@@ -23,17 +22,17 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ onStart, agents }) =>
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-fade-in" />
 
       {/* Main Card */}
-      <div className="relative w-full max-w-4xl bg-neurix-900/90 border border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-pop-in flex flex-col md:flex-row">
+      <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col md:flex-row bg-neurix-900/90 border border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-pop-in">
         
         {/* Left: Brand / Intro */}
-        <div className="w-full md:w-1/3 bg-gradient-to-br from-neurix-900 to-neurix-950 p-8 flex flex-col justify-between border-b md:border-b-0 md:border-r border-white/5">
+        <div className="w-full md:w-1/3 bg-gradient-to-br from-neurix-900 to-neurix-950 p-6 md:p-8 flex flex-col justify-between border-b md:border-b-0 md:border-r border-white/5 shrink-0">
            <div>
               <div className="w-12 h-12 rounded-xl bg-neurix-accent/10 border border-neurix-accent/20 flex items-center justify-center mb-6 shadow-glow">
                   <div className="w-4 h-4 bg-neurix-accent rounded-full animate-pulse" />
               </div>
-              <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">NEURIX</h1>
+              <h1 className="text-2xl md:text-3xl font-bold text-white mb-2 tracking-tight">NEURIX</h1>
               <p className="text-sm text-neurix-400 leading-relaxed">
-                Autonomous Reasoning Engine & <br/> transparent agent framework.
+                Autonomous Reasoning Engine & <br className="hidden md:block"/> transparent agent framework.
               </p>
            </div>
 
@@ -63,7 +62,7 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ onStart, agents }) =>
         </div>
 
         {/* Right: Agent Grid */}
-        <div className="flex-1 p-8 bg-black/20">
+        <div className="flex-1 p-6 md:p-8 bg-black/20 overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-sm font-bold text-white uppercase tracking-widest">Neural Architecture</h2>
                 <span className="text-[10px] px-2 py-1 rounded bg-white/5 border border-white/5 text-neurix-500">V2.4 ONLINE</span>

@@ -29,6 +29,8 @@ const SUGGESTIONS = [
 const CONFIDENCE_THRESHOLD = 0.8;
 const createInitialMetrics = (): AgentMetrics => ({ stepsExecuted: 0, averageConfidence: 0, verificationPassRate: 0, tokenUsage: 0, _totalConfidence: 0, _thoughtCount: 0, _verificationAttempts: 0, _verificationSuccesses: 0 });
 
+type MobileTab = 'TIMELINE' | 'GRAPH' | 'SYSTEM';
+
 export default function App() {
   const [agentState, setAgentState] = useState<AgentState>(AgentState.INIT);
   const [goal, setGoal] = useState('');
@@ -49,6 +51,8 @@ export default function App() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [hasVisited, setHasVisited] = useState(false);
+  const [mobileTab, setMobileTab] = useState<MobileTab>('GRAPH'); // Mobile Navigation State
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Refs
@@ -450,7 +454,10 @@ export default function App() {
          <WorkflowGraph 
             steps={workflow?.steps || []} 
             currentStepId={currentStepId}
-            onStepClick={setSelectedStep}
+            onStepClick={(step) => {
+                setSelectedStep(step);
+                setMobileTab('SYSTEM'); // Auto-switch to inspector on mobile when clicked
+            }}
             executionOverlay={executionOverlay}
             agents={AGENTS}
          />
@@ -460,11 +467,11 @@ export default function App() {
       <div className="absolute inset-0 z-10 pointer-events-none bg-[radial-gradient(circle_at_center,transparent_20%,#050505_120%)] opacity-60" />
 
       {/* LAYER 2: HUD Grid */}
-      <div className="absolute inset-0 z-20 p-6 pointer-events-none grid grid-cols-[340px_1fr_400px] grid-rows-[auto_1fr] gap-6">
+      <div className="absolute inset-0 z-20 p-4 lg:p-6 pointer-events-none flex flex-col lg:grid lg:grid-cols-[340px_1fr_400px] lg:grid-rows-[auto_1fr] gap-4 lg:gap-6">
          
          {/* HEADER */}
-         <header className="col-span-3 flex justify-between items-start pointer-events-auto">
-             <div className="glass-panel px-4 py-3 rounded-2xl flex items-center gap-4">
+         <header className="lg:col-span-3 flex flex-col md:flex-row justify-between items-stretch md:items-start gap-3 pointer-events-auto">
+             <div className="glass-panel px-4 py-3 rounded-2xl flex items-center justify-between md:justify-start gap-4 shrink-0">
                  <div className="flex items-center gap-3">
                      <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
                          <div className="w-2 h-2 bg-neurix-accent rounded-full animate-pulse shadow-glow" />
@@ -476,7 +483,6 @@ export default function App() {
                  </div>
                  
                  {/* CONTROLS */}
-                 <div className="h-6 w-[1px] bg-white/10 mx-1" />
                  <div className="flex gap-2">
                      <button onClick={toggleMute} className={`p-2 rounded-lg border transition-all ${isMuted ? 'bg-neurix-danger/10 border-neurix-danger/30 text-neurix-danger' : 'bg-white/5 border-white/10 text-neurix-400 hover:text-white'}`}>
                          {isMuted ? (
@@ -502,26 +508,34 @@ export default function App() {
                  </div>
              </div>
              
-             <div className="glass-panel px-6 py-2.5 rounded-2xl flex items-center gap-8">
-                 <PerformanceGraph history={metricHistory} agents={AGENTS} activeAgentId={activeAgentId} />
-                 <div className="w-[1px] h-6 bg-white/10" />
+             <div className="glass-panel px-4 md:px-6 py-2.5 rounded-2xl flex items-center gap-4 md:gap-8 justify-between md:justify-start">
+                 <div className="hidden md:block">
+                     <PerformanceGraph history={metricHistory} agents={AGENTS} activeAgentId={activeAgentId} />
+                 </div>
+                 <div className="hidden md:block w-[1px] h-6 bg-white/10" />
                  <AgentStatusDisplay state={agentState} />
              </div>
          </header>
 
          {/* LEFT COLUMN: Timeline */}
-         <aside className="row-start-2 flex flex-col min-h-0 pointer-events-auto">
+         <aside className={`
+            row-start-2 flex-col min-h-0 pointer-events-auto
+            ${mobileTab === 'TIMELINE' ? 'flex flex-1' : 'hidden lg:flex'}
+         `}>
              <div className="glass-panel flex-1 rounded-3xl overflow-hidden flex flex-col">
                  <TimelineViewer events={timeline} agents={AGENTS} />
              </div>
          </aside>
 
          {/* CENTER COLUMN: Interaction Zone */}
-         <main className="row-start-2 relative flex flex-col items-center justify-center pointer-events-none">
+         <main className={`
+            row-start-2 relative flex-col items-center justify-center
+            ${mobileTab === 'GRAPH' ? 'flex flex-1' : 'hidden lg:flex pointer-events-none'}
+         `}>
              
              {/* Spotlight Input */}
              {(agentState === AgentState.INIT || agentState === AgentState.COMPLETED || agentState === AgentState.FAILED) && (
-                 <div className="w-full max-w-2xl pointer-events-auto animate-pop-in relative flex flex-col gap-4">
+                 <div className="w-full max-w-2xl pointer-events-auto animate-pop-in relative flex flex-col gap-4 mt-auto lg:mt-0 mb-4 lg:mb-0">
                      {selectedImage && (
                         <div className="absolute -top-16 left-0 bg-neurix-900 border border-white/10 p-1 rounded-lg shadow-xl animate-fade-in flex items-center gap-2">
                              <img src={`data:image/png;base64,${selectedImage}`} className="h-12 w-12 object-cover rounded" alt="Context" />
@@ -551,8 +565,8 @@ export default function App() {
                          <div className="w-[1px] h-6 bg-white/10 mx-2" />
 
                          <input 
-                            className="flex-1 bg-transparent border-none outline-none text-xl text-white placeholder-neurix-500 font-medium h-14"
-                            placeholder={selectedImage ? "What should I do with this image?" : "Initialize mission objective..."}
+                            className="flex-1 bg-transparent border-none outline-none text-base md:text-xl text-white placeholder-neurix-500 font-medium h-12 md:h-14"
+                            placeholder={selectedImage ? "What to do with image?" : "Enter mission objective..."}
                             value={goal}
                             onChange={(e) => setGoal(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleGeneratePlan()}
@@ -568,19 +582,19 @@ export default function App() {
                      </div>
 
                      {/* Suggestions */}
-                     <div className="flex gap-3 justify-center">
+                     <div className="flex gap-2 md:gap-3 justify-center overflow-x-auto pb-1 no-scrollbar mask-gradient">
                         {SUGGESTIONS.map((s, i) => (
                             <button 
                                 key={i}
                                 onClick={() => handleGeneratePlan(s.text)}
-                                className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/20 text-[10px] text-neurix-400 hover:text-white transition-all text-left group max-w-[200px]"
+                                className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/20 text-[10px] text-neurix-400 hover:text-white transition-all text-left group min-w-[140px] max-w-[200px] shrink-0"
                             >
                                 <div className="font-bold text-neurix-accent group-hover:text-neurix-300 transition-colors mb-0.5">{s.label}</div>
                             </button>
                         ))}
                      </div>
 
-                     <div className="mt-2 flex justify-center gap-4 text-[10px] font-mono text-neurix-500/60 uppercase tracking-widest">
+                     <div className="mt-2 hidden md:flex justify-center gap-4 text-[10px] font-mono text-neurix-500/60 uppercase tracking-widest">
                          <span>⌘K Commands</span>
                          <span>System Idle</span>
                          <span>Gemini-3 Flash</span>
@@ -590,23 +604,28 @@ export default function App() {
 
              {/* Review Controls */}
              {agentState === AgentState.REVIEW_PLAN && (
-                 <div className="absolute bottom-12 pointer-events-auto animate-pop-in">
-                     <div className="glass-panel px-8 py-4 rounded-full flex gap-6 items-center shadow-2xl">
-                         <span className="text-xs text-white font-medium tracking-wide">Plan Generated successfully.</span>
-                         <div className="h-4 w-[1px] bg-white/10" />
-                         <button onClick={handleApprovePlan} className="px-6 py-2 bg-neurix-success text-black text-xs font-bold rounded-full hover:bg-green-400 transition-colors shadow-lg shadow-green-500/20">
-                             AUTHORIZE
-                         </button>
-                         <button onClick={() => setAgentState(AgentState.INIT)} className="px-4 py-2 text-neurix-400 text-xs font-bold hover:text-white transition-colors">
-                             DISCARD
-                         </button>
+                 <div className="absolute bottom-4 md:bottom-12 pointer-events-auto animate-pop-in w-full flex justify-center px-4">
+                     <div className="glass-panel px-6 py-4 rounded-full flex flex-col md:flex-row gap-4 md:gap-6 items-center shadow-2xl">
+                         <span className="text-xs text-white font-medium tracking-wide whitespace-nowrap">Plan Generated.</span>
+                         <div className="h-px w-full md:w-px md:h-4 bg-white/10" />
+                         <div className="flex gap-3">
+                            <button onClick={handleApprovePlan} className="px-6 py-2 bg-neurix-success text-black text-xs font-bold rounded-full hover:bg-green-400 transition-colors shadow-lg shadow-green-500/20">
+                                AUTHORIZE
+                            </button>
+                            <button onClick={() => setAgentState(AgentState.INIT)} className="px-4 py-2 text-neurix-400 text-xs font-bold hover:text-white transition-colors">
+                                DISCARD
+                            </button>
+                         </div>
                      </div>
                  </div>
              )}
          </main>
 
          {/* RIGHT COLUMN: Inspector + Logs */}
-         <aside className="row-start-2 flex flex-col min-h-0 pointer-events-auto gap-4">
+         <aside className={`
+            row-start-2 flex-col min-h-0 pointer-events-auto gap-4
+            ${mobileTab === 'SYSTEM' ? 'flex flex-1' : 'hidden lg:flex'}
+         `}>
              {/* Unified Inspector Panel */}
              <div className="glass-panel flex-1 rounded-3xl overflow-hidden flex flex-col">
                  
@@ -614,14 +633,19 @@ export default function App() {
                  <div className="flex-[3] min-h-0 border-b border-white/5 flex flex-col relative bg-neurix-900/20">
                      {selectedStep ? (
                         <div className="flex flex-col h-full animate-fade-in">
-                            <div className="p-5 border-b border-white/5 bg-white/[0.02] backdrop-blur-md sticky top-0 z-10">
-                                 <div className="flex items-center justify-between mb-3">
-                                     <div className="px-2 py-0.5 rounded border border-neurix-accent/20 bg-neurix-accent/10 text-[9px] font-bold text-neurix-accent uppercase tracking-widest">
-                                         {selectedStep.actionType}
+                            <div className="p-5 border-b border-white/5 bg-white/[0.02] backdrop-blur-md sticky top-0 z-10 flex justify-between items-start">
+                                 <div className="flex-1">
+                                     <div className="flex items-center justify-between mb-3">
+                                         <div className="px-2 py-0.5 rounded border border-neurix-accent/20 bg-neurix-accent/10 text-[9px] font-bold text-neurix-accent uppercase tracking-widest">
+                                             {selectedStep.actionType}
+                                         </div>
+                                         <div className={`w-1.5 h-1.5 rounded-full ${selectedStep.status === StepStatus.RUNNING ? 'bg-neurix-success animate-pulse' : 'bg-neurix-500'}`} />
                                      </div>
-                                     <div className={`w-1.5 h-1.5 rounded-full ${selectedStep.status === StepStatus.RUNNING ? 'bg-neurix-success animate-pulse' : 'bg-neurix-500'}`} />
+                                     <h2 className="text-base font-bold leading-snug text-white line-clamp-2">{selectedStep.label}</h2>
                                  </div>
-                                 <h2 className="text-base font-bold leading-snug text-white line-clamp-2">{selectedStep.label}</h2>
+                                 <button onClick={() => setSelectedStep(null)} className="ml-4 p-1 hover:bg-white/10 rounded">
+                                     <svg className="w-4 h-4 text-neurix-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                 </button>
                             </div>
                             <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar">
                                  <div>
@@ -696,6 +720,34 @@ export default function App() {
                  </div>
              </div>
          </aside>
+
+         {/* MOBILE NAVIGATION */}
+         <nav className="lg:hidden pointer-events-auto shrink-0 glass-panel rounded-xl p-1.5 flex justify-around">
+             <button 
+                onClick={() => setMobileTab('TIMELINE')}
+                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all
+                    ${mobileTab === 'TIMELINE' ? 'bg-white/10 text-white shadow-sm' : 'text-neurix-500 hover:text-neurix-300'}
+                `}
+             >
+                Timeline
+             </button>
+             <button 
+                onClick={() => setMobileTab('GRAPH')}
+                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all
+                    ${mobileTab === 'GRAPH' ? 'bg-white/10 text-white shadow-sm' : 'text-neurix-500 hover:text-neurix-300'}
+                `}
+             >
+                Graph
+             </button>
+             <button 
+                onClick={() => setMobileTab('SYSTEM')}
+                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all
+                    ${mobileTab === 'SYSTEM' ? 'bg-white/10 text-white shadow-sm' : 'text-neurix-500 hover:text-neurix-300'}
+                `}
+             >
+                System
+             </button>
+         </nav>
 
       </div>
     </div>

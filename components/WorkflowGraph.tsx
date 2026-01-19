@@ -148,14 +148,15 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
   useEffect(() => {
       if (layout.nodes.length && containerRef.current && steps.length < 3) {
           const { height, width } = containerRef.current.getBoundingClientRect();
+          const isMobile = width < 768; // Simple breakdown check
           const minX = Math.min(...layout.nodes.map(n => n.x));
           const maxX = Math.max(...layout.nodes.map(n => n.x));
           const graphWidth = maxX - minX;
           
           setView({ 
-              x: width / 2 - minX - (graphWidth/2) + 100,
+              x: width / 2 - minX - (graphWidth/2) + (isMobile ? 0 : 100),
               y: height / 2, 
-              scale: 0.9 
+              scale: isMobile ? 0.55 : 0.9 
           });
       }
   }, [layout.nodes.length === 0]); 

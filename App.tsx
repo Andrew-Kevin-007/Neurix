@@ -546,7 +546,7 @@ export default function App() {
   };
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-neurix-950 text-neurix-300 font-sans selection:bg-neurix-accent/30">
+    <div className="relative w-screen h-[100dvh] overflow-hidden bg-neurix-950 text-neurix-300 font-sans selection:bg-neurix-accent/30">
       
       {/* Onboarding Modal */}
       {!hasVisited && (
@@ -881,10 +881,10 @@ export default function App() {
          </aside>
 
          {/* MOBILE NAVIGATION */}
-         <nav className="lg:hidden pointer-events-auto shrink-0 glass-panel rounded-xl p-1.5 flex justify-around">
+         <nav className="lg:hidden pointer-events-auto shrink-0 glass-panel rounded-xl p-1.5 flex justify-around mt-auto z-50">
              <button 
                 onClick={() => setMobileTab('TIMELINE')}
-                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all
+                className={`flex-1 py-3 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all
                     ${mobileTab === 'TIMELINE' ? 'bg-white/10 text-white shadow-sm' : 'text-neurix-500 hover:text-neurix-300'}
                 `}
              >
@@ -892,7 +892,7 @@ export default function App() {
              </button>
              <button 
                 onClick={() => setMobileTab('GRAPH')}
-                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all
+                className={`flex-1 py-3 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all
                     ${mobileTab === 'GRAPH' ? 'bg-white/10 text-white shadow-sm' : 'text-neurix-500 hover:text-neurix-300'}
                 `}
              >
@@ -900,7 +900,7 @@ export default function App() {
              </button>
              <button 
                 onClick={() => setMobileTab('SYSTEM')}
-                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all
+                className={`flex-1 py-3 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all
                     ${mobileTab === 'SYSTEM' ? 'bg-white/10 text-white shadow-sm' : 'text-neurix-500 hover:text-neurix-300'}
                 `}
              >

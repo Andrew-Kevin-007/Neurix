@@ -22,7 +22,7 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ onStart, agents }) =>
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-fade-in" />
 
       {/* Main Card */}
-      <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col md:flex-row bg-neurix-900/90 border border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-pop-in">
+      <div className="relative w-full max-w-4xl w-[95%] md:w-full max-h-[90vh] flex flex-col md:flex-row bg-neurix-900/90 border border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-pop-in">
         
         {/* Left: Brand / Intro */}
         <div className="w-full md:w-1/3 bg-gradient-to-br from-neurix-900 to-neurix-950 p-6 md:p-8 flex flex-col justify-between border-b md:border-b-0 md:border-r border-white/5 shrink-0">

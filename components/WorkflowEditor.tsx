@@ -75,14 +75,17 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ workflow, agents, onSav
         </div>
 
         {/* Body */}
-        <div className="flex-1 flex overflow-hidden">
-            {/* Sidebar List */}
-            <div className="w-1/3 min-w-[250px] max-w-[350px] border-r border-white/5 bg-neurix-900/50 flex flex-col overflow-y-auto custom-scrollbar">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+            {/* Sidebar List - Top on mobile, Left on desktop */}
+            <div className="w-full md:w-1/3 md:min-w-[250px] max-h-40 md:max-h-full md:max-w-[350px] border-b md:border-b-0 md:border-r border-white/5 bg-neurix-900/50 flex md:flex-col overflow-x-auto md:overflow-y-auto custom-scrollbar shrink-0">
                 {steps.map((step, idx) => (
                     <div 
                         key={step.id}
                         onClick={() => setSelectedStepId(step.id)}
-                        className={`p-4 border-b border-white/5 cursor-pointer hover:bg-white/5 transition-colors group ${selectedStepId === step.id ? 'bg-white/10 border-l-2 border-l-neurix-accent' : 'border-l-2 border-l-transparent'}`}
+                        className={`
+                            p-4 cursor-pointer hover:bg-white/5 transition-colors group shrink-0 w-64 md:w-full border-r md:border-r-0 md:border-b border-white/5
+                            ${selectedStepId === step.id ? 'bg-white/10 md:border-l-2 md:border-l-neurix-accent border-b-2 md:border-b-white/5 border-b-neurix-accent' : 'md:border-l-2 md:border-l-transparent'}
+                        `}
                     >
                         <div className="flex justify-between items-center mb-1">
                             <span className="text-[9px] font-bold text-neurix-500 uppercase tracking-widest group-hover:text-neurix-300 transition-colors">Step {idx + 1}</span>
@@ -96,7 +99,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ workflow, agents, onSav
             {/* Detail View */}
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 bg-black/20">
                 {selectedStep ? (
-                    <div className="max-w-3xl mx-auto space-y-8 animate-fade-in">
+                    <div className="max-w-3xl mx-auto space-y-8 animate-fade-in pb-10">
                         
                         <div className="space-y-2">
                             <label className="text-[10px] font-bold text-neurix-500 uppercase tracking-widest">Step Label</label>

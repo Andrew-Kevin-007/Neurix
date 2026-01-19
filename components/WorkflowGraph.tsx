@@ -16,9 +16,7 @@ const RANK_GAP = 300;
 const BRANCH_GAP = 140; 
 
 const styles = `
-  .tva-glow { filter: drop-shadow(0 0 8px rgba(255, 214, 10, 0.4)); }
-  .tva-blur { backdrop-filter: blur(8px); }
-  
+  /* CORE ANIMATIONS */
   @keyframes draw-line {
     to { stroke-dashoffset: 0; }
   }
@@ -29,16 +27,17 @@ const styles = `
     animation: draw-line 2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   }
 
-  @keyframes stream {
-    to { stroke-dashoffset: -20; }
+  @keyframes stream-high-speed {
+    to { stroke-dashoffset: -200; }
   }
   
   .stream-line {
-    stroke-dasharray: 10 10;
+    stroke-dasharray: 50 150; /* Short dash, long gap for "packet" look */
     stroke-dashoffset: 0;
-    animation: stream 1s linear infinite;
+    animation: stream-high-speed 1s linear infinite;
   }
 
+  /* Node Entry */
   @keyframes node-pop {
     0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); filter: blur(10px); }
     70% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); filter: blur(0px); }
@@ -49,6 +48,7 @@ const styles = `
     animation: node-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
   }
   
+  /* Scanline Effect */
   @keyframes scan {
     0% { transform: translateY(-100%); opacity: 0; }
     50% { opacity: 0.5; }
@@ -58,14 +58,18 @@ const styles = `
     animation: scan 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
 
+  /* Status Pulses */
   @keyframes pulse-red {
     0%, 100% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.4); }
     50% { box-shadow: 0 0 20px 0 rgba(255, 69, 58, 0.2); }
   }
-  
-  .animate-pulse-red {
-    animation: pulse-red 2s infinite;
+  .animate-pulse-red { animation: pulse-red 2s infinite; }
+
+  @keyframes pulse-purple {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.4); }
+    50% { box-shadow: 0 0 20px 0 rgba(168, 85, 247, 0.2); }
   }
+  .animate-pulse-purple { animation: pulse-purple 2s infinite; }
 `;
 
 const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onStepClick, executionOverlay = {}, agents = {} }) => {
@@ -127,6 +131,7 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
             const sourceNode = nodes.find(n => n.id === depId);
             if (sourceNode && targetNode) {
                 edges.push({ 
+                    id: `${sourceNode.id}-${targetNode.id}`,
                     from: sourceNode, 
                     to: targetNode, 
                     status: s.status,
@@ -139,17 +144,16 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
     return { nodes, edges };
   }, [steps]);
 
-  // Center view on mount or when first node appears
+  // Center view on mount
   useEffect(() => {
       if (layout.nodes.length && containerRef.current && steps.length < 3) {
           const { height, width } = containerRef.current.getBoundingClientRect();
-          // Find center of graph
           const minX = Math.min(...layout.nodes.map(n => n.x));
           const maxX = Math.max(...layout.nodes.map(n => n.x));
           const graphWidth = maxX - minX;
           
           setView({ 
-              x: width / 2 - minX - (graphWidth/2) + 100, // Offset slightly left
+              x: width / 2 - minX - (graphWidth/2) + 100,
               y: height / 2, 
               scale: 0.9 
           });
@@ -182,8 +186,6 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
       }
   };
   const handleMouseUp = () => setIsDragging(false);
-
-  // Touch Handlers for Mobile
   const handleTouchStart = (e: React.TouchEvent) => {
       if (e.touches.length === 1) {
           setIsDragging(true);
@@ -220,16 +222,25 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
             
             <svg className="absolute overflow-visible pointer-events-none" style={{ top: 0, left: 0 }}>
                 <defs>
+                    {/* NEON GLOW FILTERS */}
                     <filter id="glow-active" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur stdDeviation="3" result="blur" />
-                        <feFlood floodColor="#A855F7" floodOpacity="0.6" result="color"/>
+                        <feGaussianBlur stdDeviation="4" result="blur" />
+                        <feFlood floodColor="#A855F7" floodOpacity="1" result="color"/>
                         <feComposite in="color" in2="blur" operator="in" result="glow"/>
                         <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
                     </filter>
-                    <linearGradient id="line-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#333" stopOpacity="0.2" />
-                        <stop offset="100%" stopColor="#666" stopOpacity="0.5" />
-                    </linearGradient>
+                    <filter id="glow-success" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="4" result="blur" />
+                        <feFlood floodColor="#30D158" floodOpacity="1" result="color"/>
+                        <feComposite in="color" in2="blur" operator="in" result="glow"/>
+                        <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                    <filter id="glow-fail" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="4" result="blur" />
+                        <feFlood floodColor="#FF453A" floodOpacity="1" result="color"/>
+                        <feComposite in="color" in2="blur" operator="in" result="glow"/>
+                        <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
                 </defs>
                 
                 {layout.edges.map((edge, i) => {
@@ -248,20 +259,45 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                     const isCompleted = edge.status === StepStatus.COMPLETED;
                     const isFailed = edge.status === StepStatus.FAILED;
                     
+                    const strokeColor = isFailed ? "#FF453A" : isCompleted ? "#30D158" : "#A855F7";
+                    const filterUrl = isFailed ? "url(#glow-fail)" : isCompleted ? "url(#glow-success)" : "url(#glow-active)";
+                    
                     return (
-                        <g key={`${edge.from.id}-${edge.to.id}`}>
-                            {/* Base Line */}
-                            <path d={d} fill="none" stroke={isFailed ? "#450a0a" : "#ffffff"} strokeWidth="1" opacity={isFailed ? 0.5 : 0.1} />
+                        <g key={edge.id}>
+                            {/* 1. Base Track (Dim, static) */}
+                            <path d={d} fill="none" stroke={strokeColor} strokeWidth="1" opacity="0.15" />
                             
-                            {/* Active/Completed Line */}
+                            {/* 2. Active Pulse / Stream Line */}
                             {(isRunning || isCompleted || isFailed) && (
-                                <path d={d} fill="none" 
+                                <path 
+                                      id={`path-${edge.id}`}
+                                      d={d} fill="none" 
                                       className={isRunning ? "stream-line" : "edge-path"}
-                                      stroke={isFailed ? "#ef4444" : isRunning ? "#A855F7" : "#30D158"} 
+                                      stroke={strokeColor} 
                                       strokeWidth={isRunning ? 2 : 1.5} 
                                       opacity={isFailed ? 0.6 : isRunning ? 1 : 0.4}
-                                      filter={isRunning ? "url(#glow-active)" : ""}
+                                      filter={isRunning ? filterUrl : ""}
                                 />
+                            )}
+                            
+                            {/* 3. COMET PARTICLES (High speed data transfer effect) */}
+                            {isRunning && (
+                                <g>
+                                    {/* Bright White Head */}
+                                    <circle r="3" fill="#fff" filter={filterUrl}>
+                                        <animateMotion dur="1.2s" repeatCount="indefinite" path={d} keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
+                                    </circle>
+                                    
+                                    {/* Colored Tail (Trailing) */}
+                                    <circle r="2" fill={strokeColor} opacity="0.8">
+                                        <animateMotion dur="1.2s" repeatCount="indefinite" path={d} begin="-0.08s" keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
+                                    </circle>
+
+                                    {/* Fading Tail */}
+                                    <circle r="1" fill={strokeColor} opacity="0.4">
+                                        <animateMotion dur="1.2s" repeatCount="indefinite" path={d} begin="-0.15s" keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
+                                    </circle>
+                                </g>
                             )}
                         </g>
                     );
@@ -278,18 +314,20 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                 const overlay = executionOverlay[node.id];
                 const agent = overlay?.assignedAgentId ? agents[overlay.assignedAgentId] : null;
 
-                // Determine border and bg styles based on state
+                const modelDisplay = node.executedModel || overlay?.activeModel;
+
+                // Dynamic Styling
                 let borderClass = 'border-white/5';
                 let bgClass = 'bg-neurix-900/60';
                 let glowClass = '';
                 
                 if (isRunning) {
                     borderClass = 'border-neurix-accent';
-                    bgClass = 'bg-neurix-800/90';
-                    glowClass = 'shadow-[0_0_30px_rgba(168,85,247,0.15)]';
+                    bgClass = 'bg-neurix-800/90 animate-pulse-purple'; // Pulsing BG
+                    glowClass = 'shadow-[0_0_30px_rgba(168,85,247,0.2)]';
                 } else if (isCompleted) {
                     borderClass = 'border-neurix-success/30';
-                    bgClass = 'bg-neurix-900/30'; // Dimmed
+                    bgClass = 'bg-neurix-900/40'; 
                 } else if (isFailed) {
                     borderClass = 'border-neurix-danger/60';
                     bgClass = 'bg-neurix-danger/10 animate-pulse-red';
@@ -306,23 +344,23 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                          style={{ 
                              left: node.x, 
                              top: node.y,
-                             animationDelay: `${index * 100}ms` // Staggered entry
+                             animationDelay: `${index * 100}ms`
                          }}
                     >
-                        {/* Node Container */}
+                        {/* Glass Container */}
                         <div className={`
                              w-full h-full rounded-xl border backdrop-blur-md overflow-hidden relative
                              flex flex-col justify-between p-4 transition-all duration-500
                              ${borderClass} ${bgClass} ${glowClass}
                         `}>
                             
-                            {/* Running Scanline Effect */}
+                            {/* Active Scanline */}
                             {isRunning && <div className="absolute inset-0 bg-gradient-to-b from-transparent via-neurix-accent/10 to-transparent animate-scan pointer-events-none" />}
                             
-                            {/* HEADER: Action Type + Agent Badge */}
+                            {/* Header Row */}
                             <div className="flex justify-between items-start z-10">
                                 <span className={`text-[9px] font-bold tracking-[0.2em] uppercase mt-1
-                                    ${isRunning ? 'text-neurix-accent' : isFailed ? 'text-neurix-danger' : isCompleted ? 'text-neurix-success' : 'text-neurix-500'}
+                                    ${isRunning ? 'text-neurix-accent drop-shadow-[0_0_5px_rgba(168,85,247,0.8)]' : isFailed ? 'text-neurix-danger' : isCompleted ? 'text-neurix-success' : 'text-neurix-500'}
                                 `}>
                                     {node.actionType}
                                 </span>
@@ -335,13 +373,12 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                                             : 'bg-white/5 border-white/5'
                                         }
                                     `}>
-                                        <div className={`w-1.5 h-1.5 rounded-full ${agent.color.replace('text-', 'bg-')} ${isRunning ? 'animate-pulse shadow-[0_0_8px_currentColor]' : ''}`} />
+                                        <div className={`w-1.5 h-1.5 rounded-full ${agent.color.replace('text-', 'bg-')} ${isRunning ? 'animate-ping' : ''}`} />
                                         <span className={`text-[8px] font-bold tracking-widest uppercase ${agent.color}`}>
                                             {agent.name}
                                         </span>
                                     </div>
                                 ) : (
-                                    /* Placeholder for pending steps or just an ID */
                                     <span className="text-[8px] font-mono text-white/20">#{node.id.split('-').pop()?.slice(0,4)}</span>
                                 )}
                             </div>
@@ -353,17 +390,22 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                                 {node.label}
                             </div>
 
-                            {/* Footer: Status Indicator */}
+                            {/* Footer Row */}
                             <div className="flex justify-between items-end z-10 w-full mt-auto">
                                 <div className="flex items-center gap-1.5">
-                                    {isFailed && <span className="text-[8px] text-neurix-danger font-bold uppercase tracking-wider">FAILURE DETECTED</span>}
+                                    {isFailed && <span className="text-[8px] text-neurix-danger font-bold uppercase tracking-wider">FAILURE</span>}
                                     {isRunning && <span className="text-[8px] text-neurix-accent font-bold uppercase tracking-wider animate-pulse">PROCESSING</span>}
                                     {isCompleted && <span className="text-[8px] text-neurix-success font-bold uppercase tracking-wider">DONE</span>}
                                 </div>
+                                {modelDisplay && (
+                                    <div className="text-[7px] font-mono text-neurix-500 opacity-60 tracking-wider">
+                                        {modelDisplay.replace('preview', '').replace('latest', '')}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        {/* VISUAL VERIFICATION BADGE (AUDIT SEAL) */}
+                        {/* Status Badges (Floating) */}
                         {isCompleted && (
                              <div className="absolute -top-2 -right-2 w-6 h-6 bg-neurix-900 rounded-full border border-neurix-success/50 flex items-center justify-center shadow-lg z-40 animate-pop-in">
                                  <svg className="w-3.5 h-3.5 text-neurix-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -377,14 +419,6 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
                                  </svg>
                              </div>
-                        )}
-                        
-                        {/* Alternative Path Indicator (if branched) */}
-                        {node.alternatives && node.alternatives.length > 0 && isFailed && (
-                            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center">
-                                <div className="w-[1px] h-3 bg-neurix-danger/40"></div>
-                                <span className="text-[8px] text-neurix-danger/60 uppercase tracking-widest bg-black/50 px-1 rounded">Diverging</span>
-                            </div>
                         )}
                     </div>
                 );

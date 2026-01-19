@@ -6,6 +6,7 @@ export enum AgentState {
   EXECUTING = 'EXECUTING',
   PAUSED = 'PAUSED',
   CHECKPOINT = 'CHECKPOINT',
+  MAINTENANCE = 'MAINTENANCE', // New State
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED',
 }
@@ -31,6 +32,8 @@ export interface WorkflowStep {
   error?: string;
   reasoningTrace?: string; // The "thought" process during execution
   citations?: { uri: string; title: string }[]; // NEW: Grounding sources
+  assignedAgentId?: string; // NEW: Manual override for agent assignment
+  executedModel?: string; // NEW: The specific Gemini model used for execution
 }
 
 export interface Workflow {
@@ -84,7 +87,9 @@ export type TimelineEventType =
   | 'VERIFICATION_FAIL' 
   | 'CHECKPOINT_REQUEST'
   | 'CHECKPOINT_RESOLVED'
-  | 'CHECKPOINT_AUTO';
+  | 'CHECKPOINT_AUTO'
+  | 'MAINTENANCE_SCAN' // New event type
+  | 'MAINTENANCE_REPORT'; // New event type
 
 export interface TimelineEvent {
   id: string;
@@ -103,6 +108,7 @@ export interface StepOverlayData {
   verificationNotes?: string;
   executionThoughts: ThoughtSignature[]; 
   assignedAgentId?: string; // Dynamically assigned agent
+  activeModel?: string; // NEW: The model currently executing this step
 }
 
 // Maps V1 Step IDs to V2 Overlay Data

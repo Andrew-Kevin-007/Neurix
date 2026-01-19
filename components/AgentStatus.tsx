@@ -18,6 +18,8 @@ const AgentStatusDisplay: React.FC<AgentStatusProps> = ({ state }) => {
         return { text: 'System Failure', color: 'text-white', bg: 'bg-neurix-danger' };
       case AgentState.COMPLETED:
         return { text: 'Mission Accomplished', color: 'text-white', bg: 'bg-neurix-success' };
+      case AgentState.MAINTENANCE:
+        return { text: 'Maintenance Mode', color: 'text-white', bg: 'bg-fuchsia-600' };
       case AgentState.PAUSED:
           return { text: 'Paused', color: 'text-white', bg: 'bg-neurix-400' };
       default:
@@ -32,6 +34,12 @@ const AgentStatusDisplay: React.FC<AgentStatusProps> = ({ state }) => {
       {(state === AgentState.PLANNING || state === AgentState.EXECUTING) && (
          <div className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+         </div>
+      )}
+      {(state === AgentState.MAINTENANCE) && (
+         <div className="relative flex h-2 w-2">
+            <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-white opacity-40"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
          </div>
       )}

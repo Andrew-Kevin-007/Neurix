@@ -41,6 +41,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
         {logs.map((log) => {
             const agentName = log.metadata?.agentName;
             const agentColor = log.metadata?.agentColor;
+            const model = log.metadata?.model;
 
             return (
               <div key={log.id} className="text-[10px] leading-relaxed flex gap-2 animate-fade-in group">
@@ -60,13 +61,20 @@ const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
                         </span>
                     )}
 
+                    {/* Model Badge Inline */}
+                    {model && (
+                        <span className="inline-block px-1.5 py-0.5 rounded-[3px] bg-white/5 border border-white/10 mr-2 mb-0.5 text-[8px] font-mono text-neurix-500">
+                           {model}
+                        </span>
+                    )}
+
                     <span className={`font-medium ${getLogColor(log.type)}`}>
                       {log.type === 'THOUGHT' ? '>> ' : ''}
                       {log.message}
                     </span>
                     
                     {/* Metadata Dump (Hidden by default) */}
-                    {log.metadata && Object.keys(log.metadata).length > 2 && (
+                    {log.metadata && Object.keys(log.metadata).length > 3 && (
                       <div className="mt-0.5 ml-2 pl-2 border-l border-white/10 text-neurix-500/60 hidden group-hover:block transition-all">
                         {JSON.stringify(log.metadata).slice(0, 100)}...
                       </div>

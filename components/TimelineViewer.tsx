@@ -52,6 +52,7 @@ const TimelineViewer: React.FC<TimelineViewerProps> = ({ events, agents }) => {
             const isLast = idx === events.length - 1;
             const agentColorHex = getAgentColorHex(agent?.color || '');
             const isHandoff = event.type === 'AGENT_HANDOFF';
+            const model = event.payload?.model;
             
             return (
                 <div key={event.id} className="flex gap-4 relative animate-fade-in group">
@@ -70,7 +71,14 @@ const TimelineViewer: React.FC<TimelineViewerProps> = ({ events, agents }) => {
                     {/* Content */}
                     <div className="flex-1 min-w-0 pt-0.5">
                         <div className="flex justify-between items-baseline mb-1">
-                            <span className={`text-[10px] font-bold tracking-wide ${agent?.color}`}>{agent?.name}</span>
+                            <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-bold tracking-wide ${agent?.color}`}>{agent?.name}</span>
+                                {model && (
+                                    <span className="text-[8px] px-1.5 py-px rounded bg-white/5 border border-white/10 text-neurix-500 font-mono">
+                                        {model.replace('preview', '').replace('latest', '')}
+                                    </span>
+                                )}
+                            </div>
                             <span className="text-[9px] text-neurix-500/40 font-mono">
                                 {new Date(event.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}
                             </span>

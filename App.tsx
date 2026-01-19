@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AgentState, Workflow, WorkflowStep, StepStatus, LogEntry, TimelineEvent, TimelineEventType, AgentIdentity, ExecutionOverlay, ThoughtSignature, AgentMetrics, MetricHistoryPoint } from './types';
-import { generateWorkflow, executeWorkflowStep, replanWorkflow, verifyOutput } from './services/gemini';
+import { generateWorkflow, executeWorkflowStep, replanWorkflow, verifyOutput, runMaintenanceScan, getModelForAction } from './services/gemini';
 import WorkflowGraph from './components/WorkflowGraph';
 import LogViewer from './components/LogViewer';
 import TimelineViewer from './components/TimelineViewer';
@@ -8,6 +8,7 @@ import AgentStatusDisplay from './components/AgentStatus';
 import PerformanceGraph from './components/PerformanceGraph';
 import SystemMonitor from './components/SystemMonitor';
 import OnboardingModal from './components/OnboardingModal';
+import WorkflowEditor from './components/WorkflowEditor';
 
 // --- AGENT DEFINITIONS ---
 const AGENTS: Record<string, AgentIdentity> = {
@@ -52,6 +53,7 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [hasVisited, setHasVisited] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('GRAPH'); // Mobile Navigation State
+  const [isEditingPlan, setIsEditingPlan] = useState(false); // New Edit Mode State
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -59,11 +61,21 @@ export default function App() {
   const stateRef = useRef(agentState);
   const workflowRef = useRef<Workflow | null>(null);
   const metricsRef = useRef(metrics);
+  const executionOverlayRef = useRef(executionOverlay);
+
   useEffect(() => { stateRef.current = agentState; }, [agentState]);
   useEffect(() => { workflowRef.current = workflow; }, [workflow]);
   useEffect(() => { metricsRef.current = metrics; }, [metrics]);
+  useEffect(() => { executionOverlayRef.current = executionOverlay; }, [executionOverlay]);
 
-  const activeAgentId = currentStepId ? executionOverlay[currentStepId]?.assignedAgentId : null;
+  // Derive ALL active agents from running steps
+  const activeAgentIds = React.useMemo(() => {
+      if (!workflow) return [];
+      const runningSteps = workflow.steps.filter(s => s.status === StepStatus.RUNNING);
+      return runningSteps
+        .map(s => executionOverlay[s.id]?.assignedAgentId)
+        .filter(id => id !== undefined) as string[];
+  }, [workflow, executionOverlay]);
 
   // --- AUDIO FEEDBACK (JARVIS MODE) ---
   const speak = useCallback((text: string, priority: boolean = false) => {
@@ -179,22 +191,58 @@ export default function App() {
     }
   };
 
-  const triggerStepExecution = useCallback(async (step: WorkflowStep, contextWorkflow: Workflow) => {
-      const candidates = Object.values(AGENTS).filter(a => ['PLANNER','VERIFIER','ROUTER'].indexOf(a.role) === -1);
-      const assignedAgent = candidates.find(a => a.capabilities.includes(step.actionType)) || candidates[candidates.length - 1]; 
+  // --- EXECUTION CORE ---
 
+  // Select best available agent for task, respecting load balancing
+  const selectAgentForTask = (step: WorkflowStep, busyAgentIds: string[]): AgentIdentity => {
+      // Manual Override
+      if (step.assignedAgentId && Object.values(AGENTS).some(a => a.id === step.assignedAgentId)) {
+          return Object.values(AGENTS).find(a => a.id === step.assignedAgentId)!;
+      }
+    
+      const candidates = Object.values(AGENTS).filter(a => ['PLANNER','VERIFIER','ROUTER'].indexOf(a.role) === -1);
+      const primary = candidates.find(a => a.capabilities.includes(step.actionType));
+      
+      // If primary is available, use it
+      if (primary && !busyAgentIds.includes(primary.id)) return primary;
+      
+      // If primary busy, find alternative specialist
+      const alternative = candidates.find(a => 
+          a.id !== primary?.id && 
+          !busyAgentIds.includes(a.id) && 
+          (a.capabilities.includes(step.actionType) || a.capabilities.includes('ALL'))
+      );
+      
+      // If alternative found, use it
+      if (alternative) return alternative;
+      
+      // If everyone busy, overload primary or executor (fallback)
+      return primary || candidates.find(a => a.role === 'EXECUTOR') || candidates[0];
+  };
+
+  const triggerStepExecution = useCallback(async (step: WorkflowStep, contextWorkflow: Workflow, assignedAgent: AgentIdentity) => {
       setCurrentStepId(step.id);
+      
+      // PREDICT MODEL USAGE
+      const activeModel = getModelForAction(step.actionType);
 
       const executionThought: ThoughtSignature = { agentId: assignedAgent.id, thinkingLevel: 'L2_REASONING', strategy: 'Probabilistic', confidence: 0.88 };
-      setExecutionOverlay(prev => ({ ...prev, [step.id]: { verified: false, requiresCheckpoint: false, assignedAgentId: assignedAgent.id, executionThoughts: [executionThought] } }));
       
-      emitTimelineEvent('EXECUTION_START', assignedAgent, `Processing ${step.label}`, step.id, null, executionThought);
-      addLog('INFO', `Starting Step: ${step.label}`, { agentName: assignedAgent.name, agentColor: assignedAgent.color });
+      // Store activeModel in overlay so Graph can see it
+      setExecutionOverlay(prev => ({ ...prev, [step.id]: { verified: false, requiresCheckpoint: false, assignedAgentId: assignedAgent.id, executionThoughts: [executionThought], activeModel: activeModel } }));
+      
+      // Emit event with model
+      emitTimelineEvent('EXECUTION_START', assignedAgent, `Processing ${step.label}`, step.id, { model: activeModel }, executionThought);
+      addLog('INFO', `Starting Step: ${step.label}`, { agentName: assignedAgent.name, agentColor: assignedAgent.color, model: activeModel });
       updateAgentMetrics(assignedAgent.id, { confidence: 0.88 });
 
+      // Track simulated tokens to properly reconcile with actual usage later
+      let simulatedTokens = 0;
       const tokenStreamer = setInterval(() => {
           const isBurst = Math.random() > 0.7;
-          const tokens = isBurst ? Math.floor(Math.random() * 12) + 8 : Math.floor(Math.random() * 4) + 2;
+          // Conservative simulation to prevent excessive visual jitter
+          const tokens = isBurst ? Math.floor(Math.random() * 6) + 4 : Math.floor(Math.random() * 2) + 1;
+          simulatedTokens += tokens;
           updateAgentMetrics(assignedAgent.id, { tokens });
       }, 200);
 
@@ -202,9 +250,11 @@ export default function App() {
           const result = await executeWorkflowStep(step, contextWorkflow.steps, contextWorkflow.goal);
           
           clearInterval(tokenStreamer);
-          updateAgentMetrics(assignedAgent.id, { stepCompleted: true, tokens: result.tokens }); 
+          // RECONCILIATION: Subtract simulated tokens then add the true total
+          const correction = result.tokens - simulatedTokens;
+          updateAgentMetrics(assignedAgent.id, { stepCompleted: true, tokens: correction }); 
 
-          addLog('THOUGHT', result.reasoning, { agentName: assignedAgent.name, agentColor: assignedAgent.color });
+          addLog('THOUGHT', result.reasoning, { agentName: assignedAgent.name, agentColor: assignedAgent.color, model: result.model });
           
           addLog('INFO', 'Requesting AXION Verification...', { agentName: AGENTS.VERIFIER.name, agentColor: AGENTS.VERIFIER.color });
           const verification = await verifyOutput(step, result.output, contextWorkflow.goal);
@@ -215,11 +265,17 @@ export default function App() {
                   ...s, 
                   status: StepStatus.COMPLETED, 
                   output: result.output,
-                  citations: result.citations 
+                  citations: result.citations,
+                  executedModel: result.model // STORE MODEL USED
               } : s) }) : null);
 
               emitTimelineEvent('VERIFICATION_PASS', AGENTS.VERIFIER, 'Output Verified: ' + verification.reason, step.id);
-              addLog('SUCCESS', `Step completed: ${step.label}`, { agentName: assignedAgent.name, agentColor: assignedAgent.color });
+              // LOG WITH MODEL METADATA
+              addLog('SUCCESS', `Step completed: ${step.label}`, { 
+                  agentName: assignedAgent.name, 
+                  agentColor: assignedAgent.color,
+                  model: result.model 
+              });
           } else {
               setAgentState(AgentState.CHECKPOINT);
               emitTimelineEvent('VERIFICATION_FAIL', AGENTS.VERIFIER, 'Rejected: ' + verification.reason, step.id);
@@ -251,25 +307,73 @@ export default function App() {
         const hasPending = currentWorkflow.steps.some(s => s.status === StepStatus.PENDING);
         
         if (!hasRunning && !hasPending) {
-            setAgentState(AgentState.COMPLETED);
-            addLog('SUCCESS', 'All objectives met. Mission Complete.');
-            speak("Mission accomplished. All objectives verified.");
+            // TRANSITION TO MAINTENANCE MODE INSTEAD OF COMPLETED
+            setAgentState(AgentState.MAINTENANCE);
+            addLog('SUCCESS', 'Execution Phase Complete. Initiating Autonomous Maintenance Protocol.');
+            speak("Mission objectives met. Entering maintenance mode.");
         }
         return;
     }
 
-    setWorkflow(prev => prev ? ({
-        ...prev,
-        steps: prev.steps.map(s => executableSteps.some(e => e.id === s.id) ? { ...s, status: StepStatus.RUNNING } : s)
-    }) : null);
+    // --- BATCH LOAD BALANCING LOGIC ---
+    // Identify agents busy in previous ticks
+    const busyAgentIds = [...activeAgentIds]; 
+    const assignments: { step: WorkflowStep, agent: AgentIdentity }[] = [];
+
+    // Assign agents for this batch
+    executableSteps.forEach(step => {
+        const agent = selectAgentForTask(step, busyAgentIds);
+        busyAgentIds.push(agent.id); // Mark this agent as busy for subsequent steps in this batch
+        assignments.push({ step, agent });
+    });
 
     if (executableSteps.length > 1) {
         addLog('INFO', `Parallel Dispatcher: Spawning ${executableSteps.length} autonomous agents.`);
     }
 
-    executableSteps.forEach(step => triggerStepExecution(step, currentWorkflow));
+    // Set statuses to RUNNING synchronously to prevent duplicate triggers next tick
+    setWorkflow(prev => prev ? ({
+        ...prev,
+        steps: prev.steps.map(s => executableSteps.some(e => e.id === s.id) ? { ...s, status: StepStatus.RUNNING } : s)
+    }) : null);
 
-  }, [triggerStepExecution, addLog, speak]);
+    // Trigger execution with pre-assigned agents
+    assignments.forEach(({ step, agent }) => {
+        triggerStepExecution(step, currentWorkflow, agent);
+    });
+
+  }, [activeAgentIds, triggerStepExecution, addLog, speak]);
+
+  // --- MAINTENANCE LOOP ---
+  useEffect(() => {
+    if (agentState !== AgentState.MAINTENANCE) return;
+
+    const interval = setInterval(async () => {
+        if (!workflowRef.current) return;
+
+        addLog('INFO', 'Maintenance Watchdog: Scanning system integrity...', { agentName: 'AXION', agentColor: AGENTS.VERIFIER.color });
+        emitTimelineEvent('MAINTENANCE_SCAN', AGENTS.VERIFIER, 'Executing background diagnostic sweep.');
+
+        try {
+            const scan = await runMaintenanceScan(workflowRef.current);
+            updateAgentMetrics(AGENTS.VERIFIER.id, { tokens: scan.tokens });
+            
+            if (scan.status === 'DEGRADED') {
+                addLog('WARNING', `Anomaly Detected: ${scan.message}`, { agentName: 'AXION', agentColor: AGENTS.VERIFIER.color });
+                emitTimelineEvent('MAINTENANCE_REPORT', AGENTS.VERIFIER, `Anomaly: ${scan.message}`);
+                speak("Anomaly detected in maintenance scan.");
+            } else {
+                addLog('SUCCESS', `System Stable: ${scan.message}`, { agentName: 'AXION', agentColor: AGENTS.VERIFIER.color });
+            }
+        } catch (e) {
+            console.error("Maintenance scan failed", e);
+        }
+
+    }, 15000); // Run scan every 15 seconds
+
+    return () => clearInterval(interval);
+  }, [agentState, addLog, emitTimelineEvent, speak, updateAgentMetrics]);
+
 
   const handleGeneratePlan = async (customGoal?: string) => {
     const targetGoal = customGoal || goal;
@@ -390,6 +494,12 @@ export default function App() {
           addLog('INFO', 'Execution Resumed.');
       }
   };
+  
+  const stopMaintenance = () => {
+      setAgentState(AgentState.COMPLETED);
+      addLog('INFO', 'Maintenance Mode Halted by Operator.');
+      speak("Maintenance mode stopped.");
+  };
 
   const resetSystem = () => {
       setWorkflow(null);
@@ -449,6 +559,20 @@ export default function App() {
           />
       )}
 
+      {/* Editor Overlay (Focused Mode) */}
+      {isEditingPlan && workflow && (
+          <WorkflowEditor 
+              workflow={workflow}
+              agents={AGENTS}
+              onSave={(updated) => {
+                  setWorkflow(updated);
+                  setIsEditingPlan(false);
+                  addLog('SUCCESS', 'Plan Updated manually by operator.');
+              }}
+              onCancel={() => setIsEditingPlan(false)}
+          />
+      )}
+
       {/* LAYER 0: Background Graph */}
       <div className="absolute inset-0 z-0">
          <WorkflowGraph 
@@ -500,6 +624,15 @@ export default function App() {
                              )}
                          </button>
                      )}
+                     
+                     {/* MAINTENANCE STOP BUTTON */}
+                     {agentState === AgentState.MAINTENANCE && (
+                         <button onClick={stopMaintenance} className="px-3 py-1.5 rounded-lg border bg-fuchsia-600/20 border-fuchsia-500/50 text-fuchsia-300 hover:bg-fuchsia-600 hover:text-white transition-all text-[10px] font-bold uppercase tracking-wide flex items-center gap-2">
+                             <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                             Stop Maint.
+                         </button>
+                     )}
+
                      {(agentState === AgentState.COMPLETED || agentState === AgentState.FAILED) && (
                          <button onClick={resetSystem} className="p-2 rounded-lg border bg-white/5 border-white/10 text-neurix-400 hover:text-white hover:bg-neurix-danger/20 hover:border-neurix-danger/50 hover:text-neurix-danger transition-all">
                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -510,7 +643,7 @@ export default function App() {
              
              <div className="glass-panel px-4 md:px-6 py-2.5 rounded-2xl flex items-center gap-4 md:gap-8 justify-between md:justify-start">
                  <div className="hidden md:block">
-                     <PerformanceGraph history={metricHistory} agents={AGENTS} activeAgentId={activeAgentId} />
+                     <PerformanceGraph history={metricHistory} agents={AGENTS} activeAgentIds={activeAgentIds} />
                  </div>
                  <div className="hidden md:block w-[1px] h-6 bg-white/10" />
                  <AgentStatusDisplay state={agentState} />
@@ -521,6 +654,7 @@ export default function App() {
          <aside className={`
             row-start-2 flex-col min-h-0 pointer-events-auto
             ${mobileTab === 'TIMELINE' ? 'flex flex-1' : 'hidden lg:flex'}
+            ${isEditingPlan ? 'opacity-0 pointer-events-none' : 'opacity-100'} transition-opacity
          `}>
              <div className="glass-panel flex-1 rounded-3xl overflow-hidden flex flex-col">
                  <TimelineViewer events={timeline} agents={AGENTS} />
@@ -603,12 +737,19 @@ export default function App() {
              )}
 
              {/* Review Controls */}
-             {agentState === AgentState.REVIEW_PLAN && (
+             {agentState === AgentState.REVIEW_PLAN && !isEditingPlan && (
                  <div className="absolute bottom-4 md:bottom-12 pointer-events-auto animate-pop-in w-full flex justify-center px-4">
                      <div className="glass-panel px-6 py-4 rounded-full flex flex-col md:flex-row gap-4 md:gap-6 items-center shadow-2xl">
                          <span className="text-xs text-white font-medium tracking-wide whitespace-nowrap">Plan Generated.</span>
                          <div className="h-px w-full md:w-px md:h-4 bg-white/10" />
-                         <div className="flex gap-3">
+                         <div className="flex gap-3 items-center">
+                            <button onClick={() => setIsEditingPlan(true)} className="px-4 py-2 bg-white/10 border border-white/5 rounded-full text-xs font-bold text-white hover:bg-white/20 transition-colors">
+                                EDIT PLAN
+                            </button>
+                            <button onClick={() => handleGeneratePlan()} className="px-3 py-2 text-neurix-400 hover:text-white transition-colors" title="Regenerate">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                            </button>
+                            <div className="w-[1px] h-4 bg-white/10" />
                             <button onClick={handleApprovePlan} className="px-6 py-2 bg-neurix-success text-black text-xs font-bold rounded-full hover:bg-green-400 transition-colors shadow-lg shadow-green-500/20">
                                 AUTHORIZE
                             </button>
@@ -625,6 +766,7 @@ export default function App() {
          <aside className={`
             row-start-2 flex-col min-h-0 pointer-events-auto gap-4
             ${mobileTab === 'SYSTEM' ? 'flex flex-1' : 'hidden lg:flex'}
+            ${isEditingPlan ? 'opacity-0 pointer-events-none' : 'opacity-100'} transition-opacity
          `}>
              {/* Unified Inspector Panel */}
              <div className="glass-panel flex-1 rounded-3xl overflow-hidden flex flex-col">
@@ -653,6 +795,34 @@ export default function App() {
                                      <p className="text-xs text-neurix-300 leading-relaxed opacity-90">{selectedStep.description}</p>
                                  </div>
                                  
+                                 {/* CITATIONS DISPLAY (STANDARD SEARCH) */}
+                                 {selectedStep.citations && selectedStep.citations.length > 0 && (
+                                     <div className="mt-2">
+                                         <label className="text-[9px] font-mono text-neurix-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                            <span>Verified Grounding</span>
+                                            <span className="px-1.5 py-0.5 rounded bg-neurix-success/10 text-neurix-success text-[8px] font-bold">TRUSTED</span>
+                                         </label>
+                                         <div className="space-y-2">
+                                             {selectedStep.citations.map((c, i) => {
+                                                 return (
+                                                     <a key={i} href={c.uri} target="_blank" rel="noopener noreferrer" 
+                                                        className={`flex items-start gap-3 p-3 rounded-lg border transition-all group bg-white/5 border-white/5 hover:bg-white/10 hover:border-neurix-accent/50`}>
+                                                         <div className={`w-8 h-8 rounded flex items-center justify-center shrink-0 text-white font-bold text-xs uppercase border border-white/5 bg-black/40`}>
+                                                             {new URL(c.uri).hostname.slice(0, 2)}
+                                                         </div>
+                                                         <div className="min-w-0">
+                                                             <div className="text-[10px] font-bold text-neurix-100 leading-tight group-hover:text-neurix-accent transition-colors truncate">
+                                                                 {c.title || "External Source"}
+                                                             </div>
+                                                             <div className="text-[9px] text-neurix-500 truncate mt-0.5">{new URL(c.uri).hostname}</div>
+                                                         </div>
+                                                     </a>
+                                                 );
+                                             })}
+                                         </div>
+                                     </div>
+                                 )}
+
                                  {selectedStep.output && (
                                      <div className="p-3 rounded-lg bg-white/5 border border-white/5 text-xs font-mono text-neurix-100 overflow-hidden">
                                          <span className="text-neurix-success block mb-2 text-[9px] uppercase tracking-wider">Output</span>
@@ -672,34 +842,23 @@ export default function App() {
                                      </div>
                                  )}
 
-                                 {/* CITATIONS DISPLAY (GROUNDING) */}
-                                 {selectedStep.citations && selectedStep.citations.length > 0 && (
-                                     <div className="mt-2">
-                                         <label className="text-[9px] font-mono text-neurix-500 uppercase tracking-widest mb-2 block">Sources</label>
-                                         <div className="flex flex-wrap gap-2">
-                                             {selectedStep.citations.map((c, i) => (
-                                                 <a key={i} href={c.uri} target="_blank" rel="noopener noreferrer" 
-                                                    className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 border border-white/5 text-[10px] text-neurix-400 truncate max-w-[200px] block transition-colors">
-                                                     {c.title || new URL(c.uri).hostname}
-                                                 </a>
-                                             ))}
-                                         </div>
-                                     </div>
-                                 )}
-
                                  {(executionOverlay[selectedStep.id]?.executionThoughts.length > 0 || logs.find(l => l.type === 'THOUGHT' && l.message.includes(selectedStep.actionType))) && (
                                      <div>
                                          <label className="text-[9px] font-mono text-neurix-500 uppercase tracking-widest mb-2 block">Reasoning Trace</label>
                                          <div className="space-y-1.5">
                                              {logs.filter(l => l.type === 'THOUGHT' && l.message.includes('[NEURIX')).slice(-1).map(l => (
-                                                 <div key={l.id} className="p-2 rounded bg-white/5 text-[10px] text-neurix-400 font-mono whitespace-pre-wrap">
-                                                     {l.message}
+                                                 <div key={l.id} className="p-3 rounded-lg bg-black/40 border border-white/10 text-[10px] text-neurix-300 font-mono whitespace-pre-wrap leading-relaxed">
+                                                     <div className="mb-2 text-neurix-500 text-[8px] uppercase tracking-widest border-b border-white/5 pb-1 flex justify-between">
+                                                        <span>Chain of Thought</span>
+                                                        <span>Gemini 2.5</span>
+                                                     </div>
+                                                     {l.message.replace(/\[.*?\]/g, '').trim()}
                                                  </div>
                                              ))}
                                              
                                              {executionOverlay[selectedStep.id].executionThoughts.map((t, i) => (
-                                                 <div key={i} className="flex items-center gap-2 text-[10px] text-neurix-400">
-                                                     <div className="h-px w-2 bg-neurix-500/30" />
+                                                 <div key={i} className="flex items-center gap-2 text-[10px] text-neurix-400 px-2">
+                                                     <div className="h-1.5 w-1.5 rounded-full bg-neurix-accent animate-pulse" />
                                                      <span className="italic">{t.strategy}</span>
                                                      <span className="ml-auto font-mono text-neurix-500">{(t.confidence * 100).toFixed(0)}%</span>
                                                  </div>

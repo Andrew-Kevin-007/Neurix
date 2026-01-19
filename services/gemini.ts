@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Schema, Tool } from "@google/genai";
-import { WorkflowStep, StepStatus } from "../types";
+import { WorkflowStep, StepStatus, Workflow } from "../types";
 
 // Helper to get client instance
 const getAiClient = () => {
@@ -8,6 +8,28 @@ const getAiClient = () => {
     throw new Error("API_KEY environment variable is missing");
   }
   return new GoogleGenAI({ apiKey });
+};
+
+// --- MODEL REGISTRY ---
+// Dynamic selection based on task requirements
+export const getModelForAction = (actionType: string): string => {
+    switch(actionType) {
+        case 'CODE': return 'gemini-3-flash-preview';
+        case 'RESEARCH':
+        case 'ANALYSIS':
+        case 'DECISION': return 'gemini-3-flash-preview';
+        case 'CREATION': return 'gemini-2.5-flash-image';
+        case 'PLANNING': return 'gemini-3-flash-preview';
+        default: return 'gemini-3-flash-preview';
+    }
+};
+
+const MODELS = {
+    CODING: 'gemini-3-flash-preview',
+    REASONING: 'gemini-3-flash-preview', 
+    CREATIVE: 'gemini-2.5-flash-image',
+    PLANNING: 'gemini-3-flash-preview',
+    GENERAL: 'gemini-3-flash-preview'
 };
 
 // Types for JSON schemas
@@ -19,6 +41,7 @@ const stepSchema: Schema = {
     description: { type: Type.STRING },
     actionType: { type: Type.STRING, enum: ['RESEARCH', 'CODE', 'ANALYSIS', 'DECISION', 'CREATION'] },
     dependencies: { type: Type.ARRAY, items: { type: Type.STRING } },
+    assignedAgentId: { type: Type.STRING, nullable: true, description: "Optional specific agent ID to force assignment." },
     parameters: {
       type: Type.ARRAY,
       description: "Execution parameters.",
@@ -72,7 +95,7 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
     
     Schema Requirements:
     1. Dependencies: Ensure steps are correctly linked.
-    2. Action Type: Categorize each step. Use 'CREATION' for visual assets (images, ui, diagrams).
+    2. Action Type: Categorize each step. Use 'CREATION' for visual assets.
     3. Parameters: Provide specific configuration parameters (e.g., search queries, target filenames, prompt details) in the 'parameters' field.
     4. Alternatives: Suggest 1-2 alternative approaches in 'alternatives' if a step is risky or complex.
     
@@ -90,13 +113,13 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
               data: imageBase64
           }
       });
-      // Append instruction to use the image
       contents.push({ text: "IMPORTANT: Analyze the provided image to inform the workflow steps. The goal typically relates to this image." });
   }
 
   try {
+    // Planning uses Gemini 3 for reliable schema following
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: MODELS.PLANNING,
       contents: contents,
       config: {
         responseMimeType: 'application/json',
@@ -110,7 +133,6 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
       throw new Error("Invalid workflow format received");
     }
     
-    // Estimate tokens if usageMetadata is missing (safety fallback)
     const tokens = response.usageMetadata?.totalTokenCount || JSON.stringify(data).length / 4;
 
     return {
@@ -122,6 +144,7 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
         dependencies: s.dependencies || [],
         parameters: transformParams(s.parameters),
         alternatives: s.alternatives || [],
+        assignedAgentId: s.assignedAgentId,
         status: StepStatus.PENDING,
       })),
       tokens: Math.ceil(tokens)
@@ -137,21 +160,23 @@ export const executeWorkflowStep = async (
   step: WorkflowStep, 
   previousSteps: WorkflowStep[],
   goal: string
-): Promise<{ output: string; reasoning: string; tokens: number; citations: {uri:string, title:string}[] }> => {
+): Promise<{ output: string; reasoning: string; tokens: number; citations: {uri:string, title:string}[]; model: string }> => {
   const ai = getAiClient();
 
   // 1. Build Context from Previous Steps
   const context = previousSteps
     .filter(s => s.status === StepStatus.COMPLETED && s.output)
     .map(s => {
-        // Truncate long outputs (like base64 images) for context window efficiency
         const isImage = s.output?.startsWith('data:image');
         const displayOutput = isImage ? "[Generated Image Asset]" : s.output;
         return `[Step: ${s.label}]\nOutput: ${displayOutput}`;
     })
     .join('\n\n');
 
-  // --- BRANCH 1: VISUAL CREATION AGENT (gemini-2.5-flash-image) ---
+  // --- MODEL SELECTION LOGIC ---
+  const selectedModel = getModelForAction(step.actionType);
+
+  // --- BRANCH 1: VISUAL CREATION AGENT ---
   if (step.actionType === 'CREATION') {
       const prompt = `
         Create a high-quality visual asset based on this request.
@@ -162,13 +187,8 @@ export const executeWorkflowStep = async (
       
       try {
           const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash-image',
-              contents: {
-                  parts: [{ text: prompt }]
-              },
-              config: {
-                 // No responseMimeType for image model
-              }
+              model: selectedModel, // gemini-2.5-flash-image
+              contents: { parts: [{ text: prompt }] },
           });
 
           let output = "Image generation completed.";
@@ -191,26 +211,28 @@ export const executeWorkflowStep = async (
 
           return {
               output: output,
-              reasoning: `[VISUAL CORTEX]\n1. Analyzing visual requirements from parameters.\n2. Constructing latent space projection.\n3. Rendering asset at 1024x1024.\n4. Output encoded to Base64 stream.`,
+              reasoning: `[VISUAL CORTEX :: ${selectedModel}]\n1. Analyzing visual requirements from parameters.\n2. Constructing latent space projection.\n3. Rendering asset at 1024x1024.\n4. Output encoded to Base64 stream.`,
               tokens: response.usageMetadata?.totalTokenCount || 500,
-              citations: []
+              citations: [],
+              model: selectedModel
           };
 
       } catch (e) {
           console.error("Image gen failed", e);
           return {
               output: "Failed to generate image. Fallback to text description.",
-              reasoning: "Visual Cortex Error. Fallback to linguistic engine.",
+              reasoning: `[${selectedModel} FAILURE]. Fallback to linguistic engine.`,
               tokens: 0,
-              citations: []
+              citations: [],
+              model: selectedModel
           };
       }
   }
 
-  // --- BRANCH 2: GENERAL REASONING AGENT (gemini-3-flash-preview) ---
+  // --- BRANCH 2: GENERAL REASONING / CODING AGENT ---
   
   const prompt = `
-    You are an autonomous execution agent.
+    You are an autonomous execution agent running on ${selectedModel}.
     
     OVERALL GOAL: "${goal}"
     CURRENT TASK: ${step.label}
@@ -230,12 +252,16 @@ export const executeWorkflowStep = async (
   `;
 
   const tools: Tool[] = [];
-  if (step.actionType === 'RESEARCH' || step.actionType === 'ANALYSIS') {
-    tools.push({ googleSearch: {} });
+  
+  // Smart Tool Injection for Research
+  const isResearch = step.actionType === 'RESEARCH' || step.actionType === 'ANALYSIS';
+
+  if (isResearch) {
+      tools.push({ googleSearch: {} });
   }
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: selectedModel,
     contents: prompt,
     config: {
       tools: tools,
@@ -246,13 +272,13 @@ export const executeWorkflowStep = async (
   const rawText = response.text || "";
   
   // Parse Thoughts vs Output
-  let reasoning = "[NEURIX EXECUTION CORE]\n";
+  let reasoning = `[NEURIX KERNEL :: ${selectedModel}]\n`;
   let output = rawText;
 
   // Extract <thought> content
   const thoughtMatch = rawText.match(/<thought>([\s\S]*?)<\/thought>/);
   if (thoughtMatch) {
-      reasoning = thoughtMatch[1].trim();
+      reasoning += thoughtMatch[1].trim();
       // Remove thought from output for clean display
       output = rawText.replace(/<thought>[\s\S]*?<\/thought>/, '').trim();
   } else {
@@ -264,6 +290,7 @@ export const executeWorkflowStep = async (
   const citations: {uri:string, title:string}[] = [];
   if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
      response.candidates[0].groundingMetadata.groundingChunks.forEach(chunk => {
+         // Web Grounding
          if (chunk.web?.uri && chunk.web?.title) {
              citations.push({ uri: chunk.web.uri, title: chunk.web.title });
          }
@@ -279,7 +306,8 @@ export const executeWorkflowStep = async (
     output,
     reasoning,
     tokens: response.usageMetadata?.totalTokenCount || 200,
-    citations
+    citations,
+    model: selectedModel
   };
 };
 
@@ -292,6 +320,9 @@ export const verifyOutput = async (
     
     // Truncate large outputs for verification
     const safeOutput = output.length > 5000 ? output.substring(0, 5000) + "...[TRUNCATED]" : output;
+    
+    // Verification is a Reasoning task -> Use Reasoning Model
+    const verificationModel = MODELS.REASONING;
 
     const prompt = `
       You are NEURIX-VERIFIER (AXION Module).
@@ -312,7 +343,7 @@ export const verifyOutput = async (
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: verificationModel,
             contents: prompt,
             config: {
                 responseMimeType: 'application/json',
@@ -368,8 +399,9 @@ export const replanWorkflow = async (
     Return ONLY the new steps (including a replacement for the failed one).
   `;
 
+  // Replanning is a Planning task -> Use Planning Model (Gemini 3)
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: MODELS.PLANNING,
     contents: prompt,
     config: {
       responseMimeType: 'application/json',
@@ -389,8 +421,66 @@ export const replanWorkflow = async (
       dependencies: s.dependencies || [],
       parameters: transformParams(s.parameters),
       alternatives: s.alternatives || [],
+      assignedAgentId: s.assignedAgentId,
       status: StepStatus.PENDING,
     })),
     tokens: Math.ceil(tokens)
   };
+};
+
+export const runMaintenanceScan = async (
+    workflow: Workflow
+): Promise<{ status: 'STABLE' | 'DEGRADED', message: string, tokens: number }> => {
+    const ai = getAiClient();
+    
+    // Aggregate outputs for context
+    const context = workflow.steps
+        .filter(s => s.status === StepStatus.COMPLETED && s.output)
+        .map(s => `[${s.label}]: ${s.output?.substring(0, 500)}`)
+        .join('\n');
+
+    const prompt = `
+        You are NEURIX-WATCHDOG. The system has completed its primary execution phase and is now in MAINTENANCE MODE.
+        
+        GOAL: "${workflow.goal}"
+        
+        WORKFLOW OUTPUT SUMMARY:
+        ${context}
+        
+        TASK:
+        Scan the generated work for potential logical bugs, edge cases, or optimization opportunities.
+        Act as a "Chaos Monkey" or Quality Assurance engineer.
+        
+        If you find a potential issue, report status as "DEGRADED" and describe the issue.
+        If everything looks solid, report "STABLE" and confirm system integrity.
+        
+        Keep the message brief and technical (log style).
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: MODELS.REASONING, // Gemini 2.5 for analysis
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        status: { type: Type.STRING, enum: ['STABLE', 'DEGRADED'] },
+                        message: { type: Type.STRING }
+                    },
+                    required: ['status', 'message']
+                }
+            }
+        });
+
+        const result = JSON.parse(response.text || '{"status": "STABLE", "message": "Monitoring active."}');
+        return {
+            status: result.status,
+            message: result.message,
+            tokens: response.usageMetadata?.totalTokenCount || 100
+        };
+    } catch (e) {
+        return { status: 'STABLE', message: 'Watchdog signal scan...', tokens: 0 };
+    }
 };

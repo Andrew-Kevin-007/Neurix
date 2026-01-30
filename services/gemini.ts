@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, Schema, Tool, GenerateContentResponse } from "@google/genai";
 import { WorkflowStep, StepStatus, Workflow } from "../types";
 
@@ -17,8 +18,22 @@ async function retry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promis
     try {
         return await fn();
     } catch (e: any) {
-        if (retries > 0 && (e.message?.includes('429') || e.status === 429 || e.message?.includes('quota') || e.message?.includes('Too Many Requests'))) {
-            console.warn(`[NEURIX KERNEL] Rate limit hit. Retrying in ${delay}ms...`);
+        // FAIL FAST CHECK:
+        // If it's a quota error (429), do NOT retry. Fail immediately to trigger Offline Mode.
+        const isQuotaError = e.message?.includes('quota') || 
+                             e.message?.includes('429') || 
+                             e.status === 429 || 
+                             e.message?.includes('Too Many Requests') ||
+                             e.message?.includes('RESOURCE_EXHAUSTED');
+
+        if (isQuotaError) {
+             console.warn("[NEURIX] API Quota Exceeded. Switching to Offline Simulation immediately.");
+             throw e; 
+        }
+
+        // Retry on transient network/server errors (5xx)
+        if (retries > 0) {
+            console.warn(`[NEURIX KERNEL] Transient error detected (${e.status || 'Network'}). Retrying in ${delay}ms...`);
             await wait(delay);
             return retry(fn, retries - 1, delay * 2);
         }
@@ -110,7 +125,7 @@ const getFallbackWorkflow = (goal: string): { steps: WorkflowStep[], tokens: num
             {
                 id: 'fallback-1',
                 label: 'System Capacity Analysis',
-                description: `[OFFLINE MODE ACTIVE] The neural link to Gemini-3 is experiencing congestion (Quota Exceeded). Analyzing goal "${goal}" using local heuristics to demonstrate system capabilities.`,
+                description: `[OFFLINE SIMULATION] The neural link to Gemini-3 is currently unavailable (Quota Exceeded). The system has switched to local simulation mode to demonstrate workflow architecture for: "${goal}".`,
                 actionType: 'ANALYSIS',
                 dependencies: [],
                 status: StepStatus.PENDING,
@@ -119,8 +134,8 @@ const getFallbackWorkflow = (goal: string): { steps: WorkflowStep[], tokens: num
             {
                 id: 'fallback-2',
                 label: 'Synthesize Offline Strategy',
-                description: 'Generate a safe execution path based on cached patterns and local logic gates.',
-                actionType: 'DECISION',
+                description: 'Generate a safe execution path based on cached patterns and local logic gates. This step simulates the Planner capability.',
+                actionType: 'ANALYSIS', // Changed from PLANNING to ANALYSIS to match types
                 dependencies: ['fallback-1'],
                 status: StepStatus.PENDING,
                 assignedAgentId: 'nexus-arch'

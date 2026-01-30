@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { WorkflowStep, StepStatus, ExecutionOverlay, AgentIdentity } from '../types';
 
@@ -70,6 +71,12 @@ const styles = `
     50% { box-shadow: 0 0 20px 0 rgba(168, 85, 247, 0.2); }
   }
   .animate-pulse-purple { animation: pulse-purple 2s infinite; }
+
+  @keyframes pulse-orange {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.4); }
+    50% { box-shadow: 0 0 20px 0 rgba(251, 146, 60, 0.2); }
+  }
+  .animate-pulse-orange { animation: pulse-orange 2s infinite; }
 `;
 
 const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onStepClick, executionOverlay = {}, agents = {} }) => {
@@ -242,6 +249,12 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                         <feComposite in="color" in2="blur" operator="in" result="glow"/>
                         <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
                     </filter>
+                    <filter id="glow-integration" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="4" result="blur" />
+                        <feFlood floodColor="#FB923C" floodOpacity="1" result="color"/>
+                        <feComposite in="color" in2="blur" operator="in" result="glow"/>
+                        <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
                 </defs>
                 
                 {layout.edges.map((edge, i) => {
@@ -311,6 +324,7 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                 const isCompleted = node.status === StepStatus.COMPLETED;
                 const isFailed = node.status === StepStatus.FAILED;
                 const isPending = node.status === StepStatus.PENDING;
+                const isIntegration = node.actionType === 'INTEGRATION';
                 
                 const overlay = executionOverlay[node.id];
                 const agent = overlay?.assignedAgentId ? agents[overlay.assignedAgentId] : null;
@@ -323,15 +337,25 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                 let glowClass = '';
                 
                 if (isRunning) {
-                    borderClass = 'border-neurix-accent';
-                    bgClass = 'bg-neurix-800/90 animate-pulse-purple'; // Pulsing BG
-                    glowClass = 'shadow-[0_0_30px_rgba(168,85,247,0.2)]';
+                    if (isIntegration) {
+                        borderClass = 'border-orange-500';
+                        bgClass = 'bg-neurix-800/90 animate-pulse-orange';
+                        glowClass = 'shadow-[0_0_30px_rgba(251,146,60,0.2)]';
+                    } else {
+                        borderClass = 'border-neurix-accent';
+                        bgClass = 'bg-neurix-800/90 animate-pulse-purple'; // Pulsing BG
+                        glowClass = 'shadow-[0_0_30px_rgba(168,85,247,0.2)]';
+                    }
                 } else if (isCompleted) {
                     borderClass = 'border-neurix-success/30';
                     bgClass = 'bg-neurix-900/40'; 
                 } else if (isFailed) {
                     borderClass = 'border-neurix-danger/60';
                     bgClass = 'bg-neurix-danger/10 animate-pulse-red';
+                } else if (isIntegration) {
+                    // Pending integration style
+                    borderClass = 'border-orange-500/50';
+                    bgClass = 'bg-orange-950/20';
                 }
 
                 return (
@@ -361,9 +385,10 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                             {/* Header Row */}
                             <div className="flex justify-between items-start z-10">
                                 <span className={`text-[9px] font-bold tracking-[0.2em] uppercase mt-1
-                                    ${isRunning ? 'text-neurix-accent drop-shadow-[0_0_5px_rgba(168,85,247,0.8)]' : isFailed ? 'text-neurix-danger' : isCompleted ? 'text-neurix-success' : 'text-neurix-500'}
+                                    ${isRunning ? (isIntegration ? 'text-orange-400' : 'text-neurix-accent') : isFailed ? 'text-neurix-danger' : isCompleted ? 'text-neurix-success' : isIntegration ? 'text-orange-400' : 'text-neurix-500'}
+                                    ${isRunning ? 'drop-shadow-[0_0_5px_currentColor]' : ''}
                                 `}>
-                                    {node.actionType}
+                                    {node.actionType} {node.toolId ? `:: ${node.toolId.toUpperCase()}` : ''}
                                 </span>
                                 
                                 {agent ? (
@@ -418,6 +443,14 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                              <div className="absolute -top-2 -right-2 w-6 h-6 bg-neurix-900 rounded-full border border-neurix-danger/50 flex items-center justify-center shadow-lg z-40 animate-pop-in">
                                  <svg className="w-3.5 h-3.5 text-neurix-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                 </svg>
+                             </div>
+                        )}
+                        {/* Connector Badge for Integrations */}
+                        {isIntegration && (
+                             <div className="absolute -bottom-2 -left-2 w-6 h-6 bg-neurix-900 rounded-full border border-orange-500/50 flex items-center justify-center shadow-lg z-40 animate-pop-in">
+                                 <svg className="w-3.5 h-3.5 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                  </svg>
                              </div>
                         )}

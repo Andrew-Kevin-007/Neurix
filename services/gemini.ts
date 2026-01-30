@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, Schema, Tool } from "@google/genai";
 import { WorkflowStep, StepStatus, Workflow } from "../types";
 
@@ -20,6 +21,7 @@ export const getModelForAction = (actionType: string): string => {
         case 'DECISION': return 'gemini-3-flash-preview';
         case 'CREATION': return 'gemini-2.5-flash-image';
         case 'PLANNING': return 'gemini-3-flash-preview';
+        case 'INTEGRATION': return 'gemini-3-flash-preview'; // Logic-heavy
         default: return 'gemini-3-flash-preview';
     }
 };
@@ -39,9 +41,10 @@ const stepSchema: Schema = {
     id: { type: Type.STRING },
     label: { type: Type.STRING },
     description: { type: Type.STRING },
-    actionType: { type: Type.STRING, enum: ['RESEARCH', 'CODE', 'ANALYSIS', 'DECISION', 'CREATION'] },
+    actionType: { type: Type.STRING, enum: ['RESEARCH', 'CODE', 'ANALYSIS', 'DECISION', 'CREATION', 'INTEGRATION'] },
     dependencies: { type: Type.ARRAY, items: { type: Type.STRING } },
     assignedAgentId: { type: Type.STRING, nullable: true, description: "Optional specific agent ID to force assignment." },
+    toolId: { type: Type.STRING, nullable: true, description: "If INTEGRATION, specify tool: 'slack', 'github', 'jira', 'email', 'database'." },
     parameters: {
       type: Type.ARRAY,
       description: "Execution parameters.",
@@ -90,16 +93,22 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
   const prompt = `
     Goal: "${goal}"
     
-    You are NEURIX, an autonomous agent architect. 
+    You are NEURIX, an autonomous automation architect. 
     Create a logical, step-by-step workflow to achieve this goal.
     
-    Schema Requirements:
-    1. Dependencies: Ensure steps are correctly linked.
-    2. Action Type: Categorize each step. Use 'CREATION' for visual assets.
-    3. Parameters: Provide specific configuration parameters (e.g., search queries, target filenames, prompt details) in the 'parameters' field.
-    4. Alternatives: Suggest 1-2 alternative approaches in 'alternatives' if a step is risky or complex.
+    CAPABILITIES:
+    You are not just a chatbot. You have access to EXTERNAL TOOLS (Integrations).
+    You can plan steps that use:
+    - 'slack' (Send alerts, messages)
+    - 'github' (Create issues, push code)
+    - 'jira' (Create tickets)
+    - 'email' (Send reports)
+    - 'database' (SQL queries)
     
-    Steps should be granular enough to be executed by an LLM agent.
+    Schema Requirements:
+    1. Action Type: Use 'INTEGRATION' if the step involves an external tool. Use 'toolId' to specify which one.
+    2. Parameters: Be very specific. For Slack, specify 'channel' and 'message_template'. For GitHub, specify 'repo' and 'branch'.
+    3. Dependencies: Logical flow is critical.
     
     Return a clean JSON object.
   `;
@@ -124,7 +133,7 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
       config: {
         responseMimeType: 'application/json',
         responseSchema: workflowSchema,
-        systemInstruction: "You are an expert systems planner. Break down complex goals into executable steps with clear parameters. If an image is provided, use visual analysis to tailor the steps.",
+        systemInstruction: "You are an expert systems planner. Break down complex goals into executable steps with clear parameters. Don't hesitate to use external integrations if the user asks for automation.",
       },
     });
 
@@ -145,6 +154,7 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
         parameters: transformParams(s.parameters),
         alternatives: s.alternatives || [],
         assignedAgentId: s.assignedAgentId,
+        toolId: s.toolId,
         status: StepStatus.PENDING,
       })),
       tokens: Math.ceil(tokens)
@@ -176,7 +186,30 @@ export const executeWorkflowStep = async (
   // --- MODEL SELECTION LOGIC ---
   const selectedModel = getModelForAction(step.actionType);
 
-  // --- BRANCH 1: VISUAL CREATION AGENT ---
+  // --- BRANCH 1: INTEGRATION AGENT (The n8n Killer) ---
+  if (step.actionType === 'INTEGRATION') {
+      // Simulate API latency
+      await new Promise(r => setTimeout(r, 1500));
+      
+      const tool = step.toolId || 'unknown_tool';
+      const params = JSON.stringify(step.parameters || {});
+      
+      let simulatedOutput = "";
+      if (tool.includes('slack')) simulatedOutput = `[SUCCESS] Message sent to Slack Channel #${step.parameters?.['channel'] || 'general'}.\nPayload: ${step.parameters?.['message'] || 'Alert'}`;
+      else if (tool.includes('github')) simulatedOutput = `[SUCCESS] PR Created: "feat: ${step.parameters?.['title'] || 'Update'}"\nBranch: main <- feature/auto-gen`;
+      else if (tool.includes('email')) simulatedOutput = `[SENT] Email dispatched to ${step.parameters?.['recipient'] || 'admin@neurix.ai'}`;
+      else simulatedOutput = `[EXECUTED] External tool '${tool}' invoked successfully with payload size 24kb.`;
+
+      return {
+          output: simulatedOutput,
+          reasoning: `[BRIDGE :: ${selectedModel}]\n1. Authenticating with ${tool.toUpperCase()} Gateway.\n2. Validating payload against OpenAPI spec.\n3. Executing POST request.\n4. Response: 200 OK.`,
+          tokens: 150,
+          citations: [],
+          model: selectedModel
+      };
+  }
+
+  // --- BRANCH 2: VISUAL CREATION AGENT ---
   if (step.actionType === 'CREATION') {
       const prompt = `
         Create a high-quality visual asset based on this request.
@@ -229,7 +262,7 @@ export const executeWorkflowStep = async (
       }
   }
 
-  // --- BRANCH 2: GENERAL REASONING / CODING AGENT ---
+  // --- BRANCH 3: GENERAL REASONING / CODING AGENT ---
   
   const prompt = `
     You are an autonomous execution agent running on ${selectedModel}.

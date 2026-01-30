@@ -4,9 +4,10 @@ export enum AgentState {
   PLANNING = 'PLANNING',
   REVIEW_PLAN = 'REVIEW_PLAN',
   EXECUTING = 'EXECUTING',
+  AWAITING_INPUT = 'AWAITING_INPUT', // NEW: Human-in-the-Loop
   PAUSED = 'PAUSED',
   CHECKPOINT = 'CHECKPOINT',
-  MAINTENANCE = 'MAINTENANCE', // New State
+  MAINTENANCE = 'MAINTENANCE',
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED',
 }
@@ -16,24 +17,27 @@ export enum StepStatus {
   RUNNING = 'RUNNING',
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED',
+  WAITING_FOR_APPROVAL = 'WAITING_FOR_APPROVAL', // NEW
 }
 
 export interface WorkflowStep {
   id: string;
   label: string;
   description: string;
-  actionType: 'RESEARCH' | 'CODE' | 'ANALYSIS' | 'DECISION' | 'CREATION';
+  actionType: 'RESEARCH' | 'CODE' | 'ANALYSIS' | 'DECISION' | 'CREATION' | 'INTEGRATION';
   dependencies: string[];
   status: StepStatus;
   // v1 Schema extensions
-  parameters?: Record<string, string>; // Changed to key-value map
-  alternatives?: string[]; // Fallback strategies
+  parameters?: Record<string, string>;
+  alternatives?: string[];
   output?: string;
   error?: string;
-  reasoningTrace?: string; // The "thought" process during execution
-  citations?: { uri: string; title: string }[]; // NEW: Grounding sources
-  assignedAgentId?: string; // NEW: Manual override for agent assignment
-  executedModel?: string; // NEW: The specific Gemini model used for execution
+  reasoningTrace?: string;
+  citations?: { uri: string; title: string }[];
+  assignedAgentId?: string;
+  executedModel?: string;
+  toolId?: string;
+  approvalRequired?: boolean; // NEW: Flag for critical steps
 }
 
 export interface Workflow {
@@ -57,9 +61,22 @@ export interface AgentContext {
   state: AgentState;
 }
 
+// --- ARTIFACTS SYSTEM ---
+export type ArtifactType = 'CODE' | 'IMAGE' | 'DOCUMENT' | 'DATA';
+
+export interface Artifact {
+    id: string;
+    stepId: string;
+    type: ArtifactType;
+    title: string;
+    content: string; // Text content or Base64/URL
+    language?: string; // For code
+    timestamp: number;
+}
+
 // --- NEURIX V2 EXTENSIONS (Architecture Overlay) ---
 
-export type AgentRole = 'PLANNER' | 'EXECUTOR' | 'VERIFIER' | 'SPECIALIST' | 'ROUTER';
+export type AgentRole = 'PLANNER' | 'EXECUTOR' | 'VERIFIER' | 'SPECIALIST' | 'ROUTER' | 'INTEGRATOR';
 
 export interface AgentIdentity {
   id: string;
@@ -88,18 +105,20 @@ export type TimelineEventType =
   | 'CHECKPOINT_REQUEST'
   | 'CHECKPOINT_RESOLVED'
   | 'CHECKPOINT_AUTO'
-  | 'MAINTENANCE_SCAN' // New event type
-  | 'MAINTENANCE_REPORT'; // New event type
+  | 'MAINTENANCE_SCAN'
+  | 'MAINTENANCE_REPORT'
+  | 'ARTIFACT_GENERATED'
+  | 'APPROVAL_REQUESTED'; // NEW
 
 export interface TimelineEvent {
   id: string;
   timestamp: number;
   type: TimelineEventType;
   agentId: string;
-  stepId?: string; // Link to V1 Step ID
+  stepId?: string;
   message: string;
   thought?: ThoughtSignature;
-  payload?: any; // Flexible data payload for visualization
+  payload?: any;
 }
 
 export interface StepOverlayData {
@@ -107,20 +126,18 @@ export interface StepOverlayData {
   requiresCheckpoint: boolean;
   verificationNotes?: string;
   executionThoughts: ThoughtSignature[]; 
-  assignedAgentId?: string; // Dynamically assigned agent
-  activeModel?: string; // NEW: The model currently executing this step
+  assignedAgentId?: string;
+  activeModel?: string;
 }
 
-// Maps V1 Step IDs to V2 Overlay Data
 export type ExecutionOverlay = Record<string, StepOverlayData>;
 
 export interface AgentMetrics {
   stepsExecuted: number;
   averageConfidence: number;
-  verificationPassRate: number; // For Executor: (success / attempts)
-  tokenUsage: number; // NEW: Total tokens consumed by this agent
+  verificationPassRate: number;
+  tokenUsage: number;
   
-  // Internal counters
   _totalConfidence: number;
   _thoughtCount: number;
   _verificationAttempts: number;

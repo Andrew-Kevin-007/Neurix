@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { AgentState } from '../types';
 
@@ -22,6 +23,8 @@ const AgentStatusDisplay: React.FC<AgentStatusProps> = ({ state }) => {
         return { text: 'Maintenance Mode', color: 'text-white', bg: 'bg-fuchsia-600' };
       case AgentState.PAUSED:
           return { text: 'Paused', color: 'text-white', bg: 'bg-neurix-400' };
+      case AgentState.AWAITING_INPUT:
+          return { text: 'Awaiting Human Input', color: 'text-black', bg: 'bg-orange-400 animate-pulse' };
       default:
         return { text: 'Ready', color: 'text-neurix-300', bg: 'bg-neurix-700' };
     }
@@ -37,7 +40,7 @@ const AgentStatusDisplay: React.FC<AgentStatusProps> = ({ state }) => {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
          </div>
       )}
-      {(state === AgentState.MAINTENANCE) && (
+      {(state === AgentState.MAINTENANCE || state === AgentState.AWAITING_INPUT) && (
          <div className="relative flex h-2 w-2">
             <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-white opacity-40"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>

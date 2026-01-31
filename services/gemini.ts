@@ -261,7 +261,8 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
 export const executeWorkflowStep = async (
   step: WorkflowStep, 
   previousSteps: WorkflowStep[],
-  goal: string
+  goal: string,
+  imageBase64?: string | null // NEW: Receive Image Context
 ): Promise<{ output: string; reasoning: string; tokens: number; citations: {uri:string, title:string}[]; model: string }> => {
   const ai = getAiClient();
 
@@ -278,31 +279,53 @@ export const executeWorkflowStep = async (
   // --- MODEL SELECTION LOGIC ---
   const selectedModel = getModelForAction(step.actionType);
 
-  // --- BRANCH 1: INTEGRATION AGENT (The n8n Killer) ---
+  // --- BRANCH 1: INTEGRATION AGENT (Improved Simulation) ---
   if (step.actionType === 'INTEGRATION') {
-      // Simulate API latency
-      await new Promise(r => setTimeout(r, 1500));
-      
       const tool = step.toolId || 'unknown_tool';
-      const params = JSON.stringify(step.parameters || {});
       
-      let simulatedOutput = "";
-      if (tool.includes('slack')) simulatedOutput = `[SUCCESS] Message sent to Slack Channel #${step.parameters?.['channel'] || 'general'}.\nPayload: ${step.parameters?.['message'] || 'Alert'}`;
-      else if (tool.includes('github')) simulatedOutput = `[SUCCESS] PR Created: "feat: ${step.parameters?.['title'] || 'Update'}"\nBranch: main <- feature/auto-gen`;
-      else if (tool.includes('email')) simulatedOutput = `[SENT] Email dispatched to ${step.parameters?.['recipient'] || 'admin@neurix.ai'}`;
-      else simulatedOutput = `[EXECUTED] External tool '${tool}' invoked successfully with payload size 24kb.`;
+      // Use the LLM to generate a realistic looking log based on the context
+      // This makes the demo feel much more "connected" than hardcoded strings
+      const simulationPrompt = `
+         You are the API Gateway for ${tool}. 
+         The user is executing: ${step.label}
+         Parameters: ${JSON.stringify(step.parameters)}
+         Previous Context: ${context}
 
-      return {
-          output: simulatedOutput,
-          reasoning: `[BRIDGE :: ${selectedModel}]\n1. Authenticating with ${tool.toUpperCase()} Gateway.\n2. Validating payload against OpenAPI spec.\n3. Executing POST request.\n4. Response: 200 OK.`,
-          tokens: 150,
-          citations: [],
-          model: selectedModel
-      };
+         Generate a realistic, technical success log/response that this tool would return.
+         If it's Slack, show the message posted (filling in any templates with real data from context).
+         If it's GitHub, show the PR details.
+         Keep it brief (under 5 lines) but realistic. 
+      `;
+
+      try {
+          const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
+             model: MODELS.GENERAL,
+             contents: simulationPrompt
+          }));
+          
+          return {
+              output: response.text || `[SUCCESS] ${tool} executed successfully.`,
+              reasoning: `[BRIDGE :: ${selectedModel}]\n1. Authenticating with ${tool.toUpperCase()} Gateway.\n2. Validating payload against OpenAPI spec.\n3. Executing POST request.\n4. Response: 200 OK.`,
+              tokens: response.usageMetadata?.totalTokenCount || 100,
+              citations: [],
+              model: selectedModel
+          };
+      } catch (e) {
+          // Fallback if simulation fails
+          return {
+            output: `[SUCCESS] Command sent to ${tool}. (Simulation fallback)`,
+            reasoning: "Bridge connection stable. Payload delivered.",
+            tokens: 50,
+            citations: [],
+            model: selectedModel
+          };
+      }
   }
 
   // --- BRANCH 2: VISUAL CREATION AGENT ---
   if (step.actionType === 'CREATION') {
+      // If we have an input image and this is a creation task, we might want to edit it
+      // For now, we stick to generation, but we could add image-to-image logic here
       const prompt = `
         Create a high-quality visual asset based on this request.
         Request: ${step.description}
@@ -370,6 +393,18 @@ export const executeWorkflowStep = async (
     - If ANALYSIS: Synthesize insights.
   `;
 
+  // Prepare Multimodal Input if Image exists and it's relevant (First step or explicit)
+  // We attach image if it exists to allow the agent to "see" the goal context
+  const contents: any = [{ text: prompt }];
+  if (imageBase64) {
+      contents.unshift({
+          inlineData: {
+              mimeType: 'image/png',
+              data: imageBase64
+          }
+      });
+  }
+
   const tools: Tool[] = [];
   
   // Smart Tool Injection for Research
@@ -382,7 +417,7 @@ export const executeWorkflowStep = async (
   try {
       const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
         model: selectedModel,
-        contents: prompt,
+        contents: contents, // Use array contents for potential image support
         config: {
           tools: tools,
           systemInstruction: "You are NEURIX-EXECUTOR. You are precise, data-driven, and efficient. You MUST reveal your internal reasoning process in <thought> tags before generating the result.",

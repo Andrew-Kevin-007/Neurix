@@ -89,6 +89,10 @@ export default function App() {
     if (audioContextRef.current.state === 'suspended') {
         audioContextRef.current.resume();
     }
+    // Ensure voices are loaded (Chrome quirk)
+    if (window.speechSynthesis) {
+        window.speechSynthesis.getVoices();
+    }
   }, []);
 
   const playSfx = useCallback((type: SfxType) => {
@@ -339,7 +343,9 @@ export default function App() {
       }, 200);
 
       try {
-          const result = await executeWorkflowStep(step, contextWorkflow.steps, contextWorkflow.goal);
+          // PASS SELECTED IMAGE TO EXECUTOR (If available)
+          const result = await executeWorkflowStep(step, contextWorkflow.steps, contextWorkflow.goal, selectedImage);
+          
           clearInterval(tokenStreamer);
           const correction = result.tokens - simulatedTokens;
           updateAgentMetrics(assignedAgent.id, { stepCompleted: true, tokens: correction }); 
@@ -368,7 +374,7 @@ export default function App() {
           setWorkflow(prev => prev ? ({ ...prev, steps: prev.steps.map(s => s.id === step.id ? { ...s, status: StepStatus.FAILED, error: String(e) } : s) }) : null);
           await handleFailure(step, contextWorkflow.steps, String(e), contextWorkflow.goal);
       }
-  }, [emitTimelineEvent, updateAgentMetrics, addLog, speak, extractArtifacts, playSfx]);
+  }, [emitTimelineEvent, updateAgentMetrics, addLog, speak, extractArtifacts, playSfx, selectedImage]); // Added selectedImage dependency
 
   const handleApproval = (approved: boolean) => {
       if (!pendingApprovalStep) return;

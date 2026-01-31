@@ -36,6 +36,7 @@ const createInitialMetrics = (): AgentMetrics => ({ stepsExecuted: 0, averageCon
 
 type MobileTab = 'TIMELINE' | 'GRAPH' | 'SYSTEM';
 type RightPanelTab = 'SYSTEM' | 'ARTIFACTS'; 
+type SfxType = 'BOOT' | 'CLICK' | 'HOVER' | 'PROCESS' | 'SUCCESS' | 'ERROR' | 'ALERT';
 
 export default function App() {
   // Initialize goal from localStorage if available (Neural Memory)
@@ -68,6 +69,7 @@ export default function App() {
   const workflowRef = useRef<Workflow | null>(null);
   const metricsRef = useRef(metrics);
   const executionOverlayRef = useRef(executionOverlay);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => { stateRef.current = agentState; }, [agentState]);
   useEffect(() => { workflowRef.current = workflow; }, [workflow]);
@@ -78,6 +80,98 @@ export default function App() {
   useEffect(() => {
       localStorage.setItem('neurix_last_goal', goal);
   }, [goal]);
+
+  // --- AUDIO ENGINE (SFX) ---
+  const initAudio = useCallback(() => {
+    if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+    }
+  }, []);
+
+  const playSfx = useCallback((type: SfxType) => {
+    if (isMuted || !audioContextRef.current) return;
+    
+    const ctx = audioContextRef.current;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    const now = ctx.currentTime;
+
+    switch (type) {
+        case 'BOOT':
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(100, now);
+            osc.frequency.exponentialRampToValueAtTime(600, now + 0.4);
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.2, now + 0.1);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.8);
+            osc.start(now);
+            osc.stop(now + 0.8);
+            break;
+        case 'CLICK':
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(800, now);
+            gain.gain.setValueAtTime(0.05, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            osc.start(now);
+            osc.stop(now + 0.1);
+            break;
+        case 'PROCESS':
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(200, now);
+            osc.frequency.linearRampToValueAtTime(300, now + 0.1);
+            gain.gain.setValueAtTime(0.05, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.15);
+            osc.start(now);
+            osc.stop(now + 0.15);
+            break;
+        case 'SUCCESS':
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.setValueAtTime(1200, now + 0.1);
+            gain.gain.setValueAtTime(0.05, now);
+            gain.gain.linearRampToValueAtTime(0.1, now + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+            osc.start(now);
+            osc.stop(now + 0.4);
+            break;
+        case 'ERROR':
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.linearRampToValueAtTime(100, now + 0.2);
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+            osc.start(now);
+            osc.stop(now + 0.3);
+            break;
+        case 'ALERT':
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(400, now);
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+            osc.start(now);
+            osc.stop(now + 0.3);
+            setTimeout(() => {
+                const osc2 = ctx.createOscillator();
+                const gain2 = ctx.createGain();
+                osc2.type = 'square';
+                osc2.connect(gain2);
+                gain2.connect(ctx.destination);
+                osc2.frequency.setValueAtTime(400, now + 0.15);
+                gain2.gain.setValueAtTime(0.1, now + 0.15);
+                gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+                osc2.start(now + 0.15);
+                osc2.stop(now + 0.45);
+            }, 150);
+            break;
+    }
+  }, [isMuted]);
 
   const activeAgentIds = React.useMemo(() => {
       if (!workflow) return [];
@@ -142,22 +236,28 @@ export default function App() {
           setArtifacts(prev => [...prev, ...newArtifacts]);
           if (newArtifacts.some(a => a.type === 'IMAGE' || a.type === 'CODE')) setRightPanelTab('ARTIFACTS');
           addLog('SUCCESS', `Generated ${newArtifacts.length} new project artifacts.`);
+          playSfx('SUCCESS');
           emitTimelineEvent('ARTIFACT_GENERATED', AGENTS.VORTEX, `Created ${newArtifacts.length} deliverables.`);
       }
-  }, [addLog]);
+  }, [addLog, playSfx]); // Added playSfx dependency
 
   const runBootSequence = useCallback(async () => {
+    initAudio();
+    playSfx('BOOT');
     addLog('INFO', 'Initializing NEURIX Kernel v2.4...');
     await new Promise(r => setTimeout(r, 600));
+    playSfx('PROCESS');
     addLog('INFO', 'Loading Neural Modules...', { modules: ['NEXUS', 'AXION', 'HELIX', 'VORTEX'] });
     await new Promise(r => setTimeout(r, 800));
+    playSfx('PROCESS');
     addLog('INFO', 'Establishing Secure Handshake with Gemini-3...', { latency: '42ms' });
     await new Promise(r => setTimeout(r, 600));
     addLog('INFO', 'Restoring Neural Memory (LocalStorage)...');
     await new Promise(r => setTimeout(r, 400));
+    playSfx('SUCCESS');
     addLog('SUCCESS', 'System Online. Awaiting directive.');
     speak("System Online. Ready for directive.");
-  }, [addLog, speak]);
+  }, [addLog, speak, playSfx, initAudio]);
 
   const updateAgentMetrics = useCallback((agentId: string, updates: { confidence?: number, stepCompleted?: boolean, verificationResult?: boolean, tokens?: number }) => {
       setMetrics(prev => {
@@ -185,11 +285,13 @@ export default function App() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      playSfx('CLICK');
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = reader.result as string;
         const base64Data = base64String.split(',')[1];
         setSelectedImage(base64Data);
+        playSfx('SUCCESS');
         addLog('INFO', `Visual Context Loaded: ${file.name}`, { size: `${(file.size / 1024).toFixed(1)}KB` });
         speak("Visual context loaded.");
       };
@@ -209,11 +311,13 @@ export default function App() {
 
   const triggerStepExecution = useCallback(async (step: WorkflowStep, contextWorkflow: Workflow, assignedAgent: AgentIdentity) => {
       setCurrentStepId(step.id);
+      playSfx('PROCESS');
       const activeModel = getModelForAction(step.actionType);
 
       if (step.actionType === 'INTEGRATION' && !step.approvalRequired) {
           setAgentState(AgentState.AWAITING_INPUT);
           setPendingApprovalStep({ step, agent: assignedAgent });
+          playSfx('ALERT');
           addLog('WARNING', `Critical Action Paused: ${step.label}`, { agentName: assignedAgent.name, agentColor: assignedAgent.color });
           emitTimelineEvent('APPROVAL_REQUESTED', assignedAgent, `Requesting authorization for external action: ${step.toolId?.toUpperCase()}`, step.id);
           speak("Critical action requires approval.", true);
@@ -246,10 +350,12 @@ export default function App() {
           if (verification.passed) {
               setWorkflow(prev => prev ? ({ ...prev, steps: prev.steps.map(s => s.id === step.id ? { ...s, status: StepStatus.COMPLETED, output: result.output, citations: result.citations, executedModel: result.model } : s) }) : null);
               extractArtifacts(step, result.output);
+              playSfx('SUCCESS');
               emitTimelineEvent('VERIFICATION_PASS', AGENTS.VERIFIER, 'Output Verified: ' + verification.reason, step.id);
               addLog('SUCCESS', `Step completed: ${step.label}`, { agentName: assignedAgent.name, agentColor: assignedAgent.color, model: result.model });
           } else {
               setAgentState(AgentState.CHECKPOINT);
+              playSfx('ERROR');
               emitTimelineEvent('VERIFICATION_FAIL', AGENTS.VERIFIER, 'Rejected: ' + verification.reason, step.id);
               addLog('WARNING', `Verification Failed: ${verification.reason}. Triggering self-correction protocol.`);
               speak("Anomaly detected. Initiating recovery protocol.", true);
@@ -258,14 +364,16 @@ export default function App() {
           }
       } catch (e) {
           clearInterval(tokenStreamer);
+          playSfx('ERROR');
           setWorkflow(prev => prev ? ({ ...prev, steps: prev.steps.map(s => s.id === step.id ? { ...s, status: StepStatus.FAILED, error: String(e) } : s) }) : null);
           await handleFailure(step, contextWorkflow.steps, String(e), contextWorkflow.goal);
       }
-  }, [emitTimelineEvent, updateAgentMetrics, addLog, speak, extractArtifacts]);
+  }, [emitTimelineEvent, updateAgentMetrics, addLog, speak, extractArtifacts, playSfx]);
 
   const handleApproval = (approved: boolean) => {
       if (!pendingApprovalStep) return;
       const { step, agent } = pendingApprovalStep;
+      playSfx(approved ? 'SUCCESS' : 'ERROR');
       if (approved) {
           addLog('SUCCESS', `Action Authorized by Operator. Resuming execution.`, { agentName: 'ROUTER', agentColor: AGENTS.ROUTER.color });
           speak("Access granted. Proceeding.");
@@ -292,6 +400,7 @@ export default function App() {
         const hasApprovalWait = stateRef.current === AgentState.AWAITING_INPUT; 
         if (!hasRunning && !hasPending && !hasApprovalWait) {
             setAgentState(AgentState.MAINTENANCE);
+            playSfx('SUCCESS');
             addLog('SUCCESS', 'Execution Phase Complete. Initiating Autonomous Maintenance Protocol.');
             speak("Mission objectives met. Entering maintenance mode.");
         }
@@ -306,7 +415,7 @@ export default function App() {
     });
     setWorkflow(prev => prev ? ({ ...prev, steps: prev.steps.map(s => executableSteps.some(e => e.id === s.id) ? { ...s, status: StepStatus.RUNNING } : s) }) : null);
     assignments.forEach(({ step, agent }) => { triggerStepExecution(step, currentWorkflow, agent); });
-  }, [activeAgentIds, triggerStepExecution, addLog, speak]);
+  }, [activeAgentIds, triggerStepExecution, addLog, speak, playSfx]);
 
   const handleFailure = async (failedStep: WorkflowStep, allSteps: WorkflowStep[], error: string, goal: string) => {
       addLog('ERROR', `Failure detected in ${failedStep.label}. Initiating replan...`, { agentName: 'ROUTER', agentColor: AGENTS.ROUTER.color });
@@ -326,11 +435,13 @@ export default function App() {
               return { ...s, id: newId, dependencies: newDeps, status: StepStatus.PENDING };
           });
           setWorkflow(prev => prev ? ({ ...prev, steps: [...prev.steps, ...remappedSteps] }) : null);
+          playSfx('PROCESS');
           emitTimelineEvent('PHASE_CHANGE', AGENTS.PLANNER, 'Timeline Diverged. New Path Created.');
           addLog('SUCCESS', 'Recovery path generated. Resuming execution.');
           speak("Rerouting complete. Resuming.");
           setAgentState(AgentState.EXECUTING);
       } catch (e) {
+          playSfx('ERROR');
           addLog('ERROR', "Critical Planner Failure during Recovery.");
           setAgentState(AgentState.FAILED);
       }
@@ -340,11 +451,13 @@ export default function App() {
 
   const toggleMute = () => { setIsMuted(!isMuted); window.speechSynthesis.cancel(); };
   const togglePause = () => {
+      playSfx('CLICK');
       if (agentState === AgentState.EXECUTING) { setAgentState(AgentState.PAUSED); addLog('WARNING', 'Execution Paused by Operator.'); } 
       else if (agentState === AgentState.PAUSED) { setAgentState(AgentState.EXECUTING); addLog('INFO', 'Execution Resumed.'); }
   };
-  const stopMaintenance = () => { setAgentState(AgentState.COMPLETED); addLog('INFO', 'Maintenance Mode Halted by Operator.'); speak("Maintenance mode stopped."); };
+  const stopMaintenance = () => { playSfx('CLICK'); setAgentState(AgentState.COMPLETED); addLog('INFO', 'Maintenance Mode Halted by Operator.'); speak("Maintenance mode stopped."); };
   const resetSystem = () => { 
+      playSfx('BOOT');
       setWorkflow(null); 
       setLogs([]); 
       setTimeline([]); 
@@ -357,6 +470,8 @@ export default function App() {
   };
 
   const handleGeneratePlan = async (customGoal?: string) => {
+    initAudio(); // Ensure audio context is resumed on user interaction
+    playSfx('CLICK');
     const targetGoal = customGoal || goal;
     if (!targetGoal.trim()) return;
     if (customGoal) setGoal(customGoal);
@@ -371,11 +486,13 @@ export default function App() {
       setWorkflow({ version: 'v1', goal: targetGoal, steps });
       updateAgentMetrics(AGENTS.PLANNER.id, { tokens, stepCompleted: true, confidence: 0.95 });
       setAgentState(AgentState.REVIEW_PLAN);
+      playSfx('SUCCESS');
       emitTimelineEvent('AGENT_HANDOFF', AGENTS.PLANNER, 'Workflow Generated. Awaiting Approval.');
       addLog('SUCCESS', 'Workflow generated successfully.', { tokensUsed: tokens, stepCount: steps.length });
       speak("Workflow generated. Awaiting approval.");
     } catch (error) {
       setAgentState(AgentState.FAILED);
+      playSfx('ERROR');
       addLog('ERROR', String(error));
       speak("Error generating workflow.");
     }
@@ -383,6 +500,7 @@ export default function App() {
 
   const handleApprovePlan = () => {
     if (workflow) {
+      playSfx('CLICK');
       setAgentState(AgentState.EXECUTING);
       emitTimelineEvent('PHASE_CHANGE', AGENTS.ROUTER, 'Execution Sequence Initiated.');
       addLog('INFO', 'User authorized execution. Transferring control to Router.');
@@ -405,6 +523,7 @@ export default function App() {
             const scan = await runMaintenanceScan(workflowRef.current);
             updateAgentMetrics(AGENTS.VERIFIER.id, { tokens: scan.tokens });
             if (scan.status === 'DEGRADED') {
+                playSfx('ALERT');
                 addLog('WARNING', `Anomaly Detected: ${scan.message}`, { agentName: 'AXION', agentColor: AGENTS.VERIFIER.color });
                 emitTimelineEvent('MAINTENANCE_REPORT', AGENTS.VERIFIER, `Anomaly: ${scan.message}`);
                 speak("Anomaly detected in maintenance scan.");
@@ -414,7 +533,7 @@ export default function App() {
         } catch (e) { console.error("Maintenance scan failed", e); }
     }, 15000);
     return () => clearInterval(interval);
-  }, [agentState, addLog, emitTimelineEvent, speak, updateAgentMetrics]);
+  }, [agentState, addLog, emitTimelineEvent, speak, updateAgentMetrics, playSfx]);
 
   return (
     <div className="relative w-screen h-[100dvh] overflow-hidden font-sans selection:bg-neurix-accent/30 text-neurix-300">
@@ -440,7 +559,11 @@ export default function App() {
                      </div>
                      <div>
                          <h1 className="text-sm font-bold tracking-tight text-white leading-none">NEURIX <span className="text-neurix-500 font-normal">OS</span></h1>
-                         <span className="text-[10px] font-mono text-neurix-500 tracking-wide uppercase">V2.4.0 <span className="text-neurix-success mx-1">•</span> ONLINE</span>
+                         <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] font-mono text-neurix-500 tracking-wide uppercase">V2.4.0 <span className="text-neurix-success mx-1">•</span> ONLINE</span>
+                            <span className="hidden md:inline-block w-px h-2 bg-neurix-500/30"></span>
+                            <span className="hidden md:inline-block text-[9px] font-mono text-neurix-400 bg-white/5 px-1 rounded">GEMINI 2.0 FLASH</span>
+                         </div>
                      </div>
                  </div>
                  {/* Mobile Mute Toggle only */}

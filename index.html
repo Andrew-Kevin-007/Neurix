@@ -44,6 +44,7 @@
               'pop-in': 'popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
               'fade-in': 'fadeIn 0.3s ease-out forwards',
               'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'radar-spin': 'radarSpin 10s linear infinite',
             },
             keyframes: {
               popIn: {
@@ -53,6 +54,10 @@
               fadeIn: {
                 '0%': { opacity: '0' },
                 '100%': { opacity: '1' },
+              },
+              radarSpin: {
+                '0%': { transform: 'rotate(0deg)' },
+                '100%': { transform: 'rotate(360deg)' },
               }
             }
           }
@@ -95,6 +100,20 @@
         pointer-events: none;
       }
 
+      /* Radar Sweep Effect */
+      .bg-radar {
+        position: fixed;
+        top: 50%; left: 50%;
+        width: 150vmax; height: 150vmax;
+        transform: translate(-50%, -50%);
+        z-index: -1;
+        background: conic-gradient(from 0deg, transparent 0deg, transparent 270deg, rgba(139, 92, 246, 0.03) 360deg);
+        animation: radarSpin 15s linear infinite;
+        pointer-events: none;
+        border-radius: 50%;
+        mask-image: radial-gradient(circle at 50% 50%, black 0%, transparent 60%);
+      }
+
       /* Production Glass */
       .glass-panel {
         background: var(--glass-bg);
@@ -134,6 +153,7 @@
   <body>
     <div id="root"></div>
     <div class="bg-radial-glow"></div>
+    <div class="bg-radar"></div>
     <div class="bg-grid"></div>
   </body>
 </html>

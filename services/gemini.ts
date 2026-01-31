@@ -81,7 +81,7 @@ const stepSchema: Schema = {
         type: Type.OBJECT,
         properties: {
           key: { type: Type.STRING },
-          value: { type: Type.STRING }
+          value: { type: Type.STRING, description: "Keep values short (under 200 chars). NO BASE64 OR IMAGE DATA." }
         },
         required: ['key', 'value']
       },
@@ -125,7 +125,7 @@ const getFallbackWorkflow = (goal: string): { steps: WorkflowStep[], tokens: num
             {
                 id: 'fallback-1',
                 label: 'System Capacity Analysis',
-                description: `[OFFLINE SIMULATION] The neural link to Gemini-3 is currently unavailable (Quota Exceeded). The system has switched to local simulation mode to demonstrate workflow architecture for: "${goal}".`,
+                description: `[OFFLINE SIMULATION] The neural link to Gemini-3 is currently unavailable (Quota or Parsing Error). The system has switched to local simulation mode to demonstrate workflow architecture for: "${goal}".`,
                 actionType: 'ANALYSIS',
                 dependencies: [],
                 status: StepStatus.PENDING,
@@ -190,10 +190,11 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
     - 'email' (Send reports)
     - 'database' (SQL queries)
     
-    Schema Requirements:
+    CONSTRAINTS:
     1. Action Type: Use 'INTEGRATION' if the step involves an external tool. Use 'toolId' to specify which one.
-    2. Parameters: Be very specific. For Slack, specify 'channel' and 'message_template'. For GitHub, specify 'repo' and 'branch'.
-    3. Dependencies: Logical flow is critical.
+    2. Parameters: Be very specific. For Slack, specify 'channel' and 'message_template'. 
+    3. IMPORTANT: NEVER output Base64 image data in parameters. Never repeat the full image data. Keep parameter values short (< 200 chars).
+    4. Dependencies: Logical flow is critical.
     
     Return a clean JSON object.
   `;
@@ -207,7 +208,7 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
               data: imageBase64
           }
       });
-      contents.push({ text: "IMPORTANT: Analyze the provided image to inform the workflow steps. The goal typically relates to this image." });
+      contents.push({ text: "IMPORTANT: Analyze the provided image to inform the workflow steps. The goal typically relates to this image. DO NOT echo the image data back in the response." });
   }
 
   try {
@@ -218,11 +219,17 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
       config: {
         responseMimeType: 'application/json',
         responseSchema: workflowSchema,
-        systemInstruction: "You are an expert systems planner. Break down complex goals into executable steps with clear parameters. Don't hesitate to use external integrations if the user asks for automation.",
+        // Crucial system instruction update to prevent massive base64 hallucination
+        systemInstruction: "You are an expert systems planner. Break down complex goals into executable steps. CRITICAL: Never include base64 image data or extremely long strings in the JSON output. Keep it concise.",
+        maxOutputTokens: 8192, 
       },
     }));
 
-    const data = JSON.parse(response.text || '{}');
+    let text = response.text || '{}';
+    // Clean potential markdown wrappers if the model ignores MIME type
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
+    const data = JSON.parse(text);
     if (!data.steps || !Array.isArray(data.steps)) {
       throw new Error("Invalid workflow format received");
     }

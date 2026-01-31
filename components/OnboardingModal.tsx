@@ -37,26 +37,33 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ onStart, agents }) =>
               </p>
            </div>
 
-           <div className="mt-8 space-y-4">
+           <div className="mt-6 space-y-4">
               <div className="flex items-start gap-3">
-                  <span className="text-neurix-accent mt-0.5">01</span>
+                  <span className="text-neurix-accent mt-0.5 font-mono text-xs">01</span>
                   <p className="text-xs text-neurix-500">
                     <strong className="text-neurix-300 block mb-0.5">Planning</strong>
                     Goals are converted into directed acyclic graphs (DAGs) by NEXUS.
                   </p>
               </div>
               <div className="flex items-start gap-3">
-                  <span className="text-neurix-success mt-0.5">02</span>
+                  <span className="text-neurix-success mt-0.5 font-mono text-xs">02</span>
                   <p className="text-xs text-neurix-500">
                     <strong className="text-neurix-300 block mb-0.5">Execution</strong>
-                    Specialists (Helix, Vortex) execute tasks in parallel.
+                    Specialists execute tasks in parallel with tool integrations.
                   </p>
               </div>
               <div className="flex items-start gap-3">
-                  <span className="text-neurix-warning mt-0.5">03</span>
+                  <span className="text-neurix-warning mt-0.5 font-mono text-xs">03</span>
                   <p className="text-xs text-neurix-500">
                     <strong className="text-neurix-300 block mb-0.5">Verification</strong>
                     AXION audits every output. Failures trigger auto-recovery.
+                  </p>
+              </div>
+              <div className="flex items-start gap-3">
+                  <span className="text-cyan-400 mt-0.5 font-mono text-xs">04</span>
+                  <p className="text-xs text-neurix-500">
+                    <strong className="text-neurix-300 block mb-0.5">Voice Command</strong>
+                    Native speech recognition for hands-free directives.
                   </p>
               </div>
            </div>

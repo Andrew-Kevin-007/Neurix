@@ -12,6 +12,7 @@ import OnboardingModal from './components/OnboardingModal';
 import WorkflowEditor from './components/WorkflowEditor';
 import ArtifactsPanel from './components/ArtifactsPanel';
 import ApprovalModal from './components/ApprovalModal'; 
+import VoiceInput from './components/VoiceInput';
 
 // --- AGENT DEFINITIONS ---
 const AGENTS: Record<string, AgentIdentity> = {
@@ -37,8 +38,10 @@ type MobileTab = 'TIMELINE' | 'GRAPH' | 'SYSTEM';
 type RightPanelTab = 'SYSTEM' | 'ARTIFACTS'; 
 
 export default function App() {
+  // Initialize goal from localStorage if available (Neural Memory)
+  const [goal, setGoal] = useState(() => localStorage.getItem('neurix_last_goal') || '');
+  
   const [agentState, setAgentState] = useState<AgentState>(AgentState.INIT);
-  const [goal, setGoal] = useState('');
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
@@ -70,6 +73,11 @@ export default function App() {
   useEffect(() => { workflowRef.current = workflow; }, [workflow]);
   useEffect(() => { metricsRef.current = metrics; }, [metrics]);
   useEffect(() => { executionOverlayRef.current = executionOverlay; }, [executionOverlay]);
+
+  // Persist Goal to Neural Memory
+  useEffect(() => {
+      localStorage.setItem('neurix_last_goal', goal);
+  }, [goal]);
 
   const activeAgentIds = React.useMemo(() => {
       if (!workflow) return [];
@@ -145,6 +153,8 @@ export default function App() {
     await new Promise(r => setTimeout(r, 800));
     addLog('INFO', 'Establishing Secure Handshake with Gemini-3...', { latency: '42ms' });
     await new Promise(r => setTimeout(r, 600));
+    addLog('INFO', 'Restoring Neural Memory (LocalStorage)...');
+    await new Promise(r => setTimeout(r, 400));
     addLog('SUCCESS', 'System Online. Awaiting directive.');
     speak("System Online. Ready for directive.");
   }, [addLog, speak]);
@@ -334,7 +344,17 @@ export default function App() {
       else if (agentState === AgentState.PAUSED) { setAgentState(AgentState.EXECUTING); addLog('INFO', 'Execution Resumed.'); }
   };
   const stopMaintenance = () => { setAgentState(AgentState.COMPLETED); addLog('INFO', 'Maintenance Mode Halted by Operator.'); speak("Maintenance mode stopped."); };
-  const resetSystem = () => { setWorkflow(null); setLogs([]); setTimeline([]); setArtifacts([]); setAgentState(AgentState.INIT); setGoal(''); setSelectedImage(null); addLog('INFO', 'System Reset. Memory cleared.'); };
+  const resetSystem = () => { 
+      setWorkflow(null); 
+      setLogs([]); 
+      setTimeline([]); 
+      setArtifacts([]); 
+      setAgentState(AgentState.INIT); 
+      setGoal(''); 
+      localStorage.removeItem('neurix_last_goal'); // Clear memory
+      setSelectedImage(null); 
+      addLog('INFO', 'System Reset. Neural Memory flushed.'); 
+  };
 
   const handleGeneratePlan = async (customGoal?: string) => {
     const targetGoal = customGoal || goal;
@@ -368,6 +388,10 @@ export default function App() {
       addLog('INFO', 'User authorized execution. Transferring control to Router.');
       speak("Authorization confirmed. Executing.");
     }
+  };
+
+  const handleVoiceTranscript = (text: string) => {
+      setGoal(prev => (prev ? `${prev} ${text}` : text));
   };
 
   // Maintenance Loop
@@ -476,12 +500,19 @@ export default function App() {
                              
                              <input 
                                 className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-neurix-500 font-medium h-10 px-2"
-                                placeholder="Enter directive..."
+                                placeholder="Enter directive or speak..."
                                 value={goal}
                                 onChange={(e) => setGoal(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleGeneratePlan()}
                                 autoFocus
                              />
+                             
+                             {/* Voice Input Integration */}
+                             <VoiceInput 
+                                onTranscript={handleVoiceTranscript} 
+                                isProcessing={agentState === AgentState.PLANNING}
+                             />
+
                              <button onClick={() => handleGeneratePlan()} disabled={!goal.trim()} className="h-10 px-5 rounded-xl bg-neurix-100 text-black font-bold text-xs tracking-wide hover:bg-white transition-colors disabled:opacity-50">INITIATE</button>
                          </div>
                          

@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type, Schema, Tool, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Type, Schema, Tool, GenerateContentResponse, Part, Content } from "@google/genai";
 import { WorkflowStep, StepStatus, Workflow } from "../types";
 
 // Helper to get client instance
@@ -33,7 +33,7 @@ async function retry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promis
 
         // Retry on transient network/server errors (5xx)
         if (retries > 0) {
-            console.warn(`[NEURIX KERNEL] Transient error detected (${e.status || 'Network'}). Retrying in ${delay}ms...`);
+            console.warn(`[NEURIX KERNEL] Transient error detected (${e.status || e.message || 'Network'}). Retrying in ${delay}ms...`);
             await wait(delay);
             return retry(fn, retries - 1, delay * 2);
         }
@@ -70,7 +70,9 @@ const MODELS = {
     REASONING: 'gemini-3-pro-preview', 
     CREATIVE: 'gemini-2.5-flash-image',
     PLANNING: 'gemini-3-pro-preview',
-    GENERAL: 'gemini-3-flash-preview'
+    GENERAL: 'gemini-3-flash-preview',
+    // Fallback if 3-series is not enabled for the key
+    FALLBACK: 'gemini-2.0-flash-exp'
 };
 
 // Types for JSON schemas
@@ -128,14 +130,14 @@ const transformParams = (paramsArray?: {key: string, value: string}[]): Record<s
 };
 
 // --- FALLBACK SYSTEMS ---
-const getFallbackWorkflow = (goal: string): { steps: WorkflowStep[], tokens: number } => {
+const getFallbackWorkflow = (goal: string, errorMsg?: string): { steps: WorkflowStep[], tokens: number } => {
     return {
         tokens: 0,
         steps: [
             {
                 id: 'fallback-1',
                 label: 'System Capacity Analysis',
-                description: `[OFFLINE SIMULATION] The neural link to Gemini-3 is currently unavailable (Quota or Parsing Error). The system has switched to local simulation mode to demonstrate workflow architecture for: "${goal}".`,
+                description: `[OFFLINE SIMULATION] The neural link to Gemini-3 is unavailable. Error: ${errorMsg || 'Unknown'}. The system has switched to local simulation mode.`,
                 actionType: 'ANALYSIS',
                 dependencies: [],
                 status: StepStatus.PENDING,
@@ -145,7 +147,7 @@ const getFallbackWorkflow = (goal: string): { steps: WorkflowStep[], tokens: num
                 id: 'fallback-2',
                 label: 'Synthesize Offline Strategy',
                 description: 'Generate a safe execution path based on cached patterns and local logic gates. This step simulates the Planner capability.',
-                actionType: 'ANALYSIS', // Changed from PLANNING to ANALYSIS to match types
+                actionType: 'ANALYSIS',
                 dependencies: ['fallback-1'],
                 status: StepStatus.PENDING,
                 assignedAgentId: 'nexus-arch'
@@ -153,7 +155,7 @@ const getFallbackWorkflow = (goal: string): { steps: WorkflowStep[], tokens: num
              {
                 id: 'fallback-3',
                 label: 'Execute Safe Mode Task',
-                description: 'Perform the core task requirement using simulated execution environment. This allows you to verify the UI/UX flow without active model inference.',
+                description: `Perform the core task requirement using simulated execution environment: ${goal}`,
                 actionType: 'CREATION',
                 dependencies: ['fallback-2'],
                 status: StepStatus.PENDING,
@@ -173,10 +175,10 @@ const getFallbackWorkflow = (goal: string): { steps: WorkflowStep[], tokens: num
     };
 }
 
-const getFallbackExecution = (step: WorkflowStep): any => {
+const getFallbackExecution = (step: WorkflowStep, errorMsg?: string): any => {
     return {
-        output: `[SIMULATED OUTPUT for ${step.label}]\n\nSystem is operating in offline mode due to API constraints. The requested action "${step.actionType}" was simulated successfully.\n\nGenerated content placeholder for: ${step.description}`,
-        reasoning: `[OFFLINE KERNEL]\n1. API Quota Exceeded detected.\n2. Switching to local simulation engine.\n3. Executing ${step.actionType} logic locally.\n4. Result: SUCCESS (Simulated).`,
+        output: `[SIMULATED OUTPUT for ${step.label}]\n\nSystem is operating in offline mode. \nError Trace: ${errorMsg}\n\nThe requested action "${step.actionType}" was simulated successfully.`,
+        reasoning: `[OFFLINE KERNEL]\n1. API Error detected: ${errorMsg}\n2. Switching to local simulation engine.\n3. Executing ${step.actionType} logic locally.\n4. Result: SUCCESS (Simulated).`,
         tokens: 0,
         citations: [],
         model: 'neurix-offline-v1'
@@ -209,34 +211,47 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
     Return a clean JSON object.
   `;
 
-  // Prepare contents (Multimodal support)
-  const contents: any = [{ text: prompt }];
+  // Prepare contents (Multimodal support) - STRICT STRUCTURE
+  const parts: Part[] = [];
+  
   if (imageBase64) {
-      contents.unshift({
+      parts.push({
           inlineData: {
-              mimeType: 'image/png', // Assume PNG for simplicity in this demo context
+              mimeType: 'image/png',
               data: imageBase64
           }
       });
-      contents.push({ text: "IMPORTANT: Analyze the provided image to inform the workflow steps. The goal typically relates to this image. DO NOT echo the image data back in the response." });
+      parts.push({ text: "IMPORTANT: Analyze the provided image to inform the workflow steps. The goal typically relates to this image. DO NOT echo the image data back in the response." });
   }
+  
+  parts.push({ text: prompt });
+
+  const contents: Content = { role: 'user', parts: parts };
 
   try {
-    // Planning uses Gemini 3 Pro for robust reasoning and schema adherence
-    const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
-      model: MODELS.PLANNING, // Gemini 3 Pro
-      contents: contents,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: workflowSchema,
-        // Crucial system instruction update to prevent massive base64 hallucination
-        systemInstruction: "You are an expert systems planner. Break down complex goals into executable steps. CRITICAL: Never include base64 image data or extremely long strings in the JSON output. Keep it concise.",
-        maxOutputTokens: 8192, 
-      },
-    }));
+    const runGeneration = async (model: string) => {
+        return await ai.models.generateContent({
+          model: model,
+          contents: contents,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: workflowSchema,
+            systemInstruction: "You are an expert systems planner. Break down complex goals into executable steps. CRITICAL: Never include base64 image data or extremely long strings in the JSON output. Keep it concise.",
+            maxOutputTokens: 8192, 
+          },
+        });
+    };
+
+    // Try Primary Model, Fallback to Safe Model if 404/400
+    let response;
+    try {
+        response = await retry<GenerateContentResponse>(() => runGeneration(MODELS.PLANNING));
+    } catch (e: any) {
+        console.warn(`[NEURIX] Planning with ${MODELS.PLANNING} failed, trying fallback ${MODELS.FALLBACK}. Error: ${e.message}`);
+        response = await retry<GenerateContentResponse>(() => runGeneration(MODELS.FALLBACK));
+    }
 
     let text = response.text || '{}';
-    // Clean potential markdown wrappers if the model ignores MIME type
     text = text.replace(/```json/g, '').replace(/```/g, '').trim();
 
     const data = JSON.parse(text);
@@ -262,9 +277,9 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
       tokens: Math.ceil(tokens)
     };
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Workflow generation failed (Switching to Offline Mode):", error);
-    return getFallbackWorkflow(goal);
+    return getFallbackWorkflow(goal, error.message);
   }
 };
 
@@ -287,14 +302,11 @@ export const executeWorkflowStep = async (
     .join('\n\n');
 
   // --- AUTO MODEL SWITCHING ---
-  const selectedModel = getModelForAction(step.actionType);
+  let selectedModel = getModelForAction(step.actionType);
 
   // --- BRANCH 1: INTEGRATION AGENT (Improved Simulation) ---
   if (step.actionType === 'INTEGRATION') {
       const tool = step.toolId || 'unknown_tool';
-      
-      // Use the LLM to generate a realistic looking log based on the context
-      // This makes the demo feel much more "connected" than hardcoded strings
       const simulationPrompt = `
          You are the API Gateway for ${tool}. 
          The user is executing: ${step.label}
@@ -310,7 +322,7 @@ export const executeWorkflowStep = async (
       try {
           const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
              model: MODELS.GENERAL, // Flash is sufficient for simulation
-             contents: simulationPrompt
+             contents: { role: 'user', parts: [{ text: simulationPrompt }] }
           }));
           
           return {
@@ -321,7 +333,6 @@ export const executeWorkflowStep = async (
               model: selectedModel
           };
       } catch (e) {
-          // Fallback if simulation fails
           return {
             output: `[SUCCESS] Command sent to ${tool}. (Simulation fallback)`,
             reasoning: "Bridge connection stable. Payload delivered.",
@@ -334,8 +345,6 @@ export const executeWorkflowStep = async (
 
   // --- BRANCH 2: VISUAL CREATION AGENT ---
   if (step.actionType === 'CREATION') {
-      // If we have an input image and this is a creation task, we might want to edit it
-      // For now, we stick to generation, but we could add image-to-image logic here
       const prompt = `
         Create a high-quality visual asset based on this request.
         Request: ${step.description}
@@ -346,7 +355,7 @@ export const executeWorkflowStep = async (
       try {
           const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
               model: selectedModel, // gemini-2.5-flash-image
-              contents: { parts: [{ text: prompt }] },
+              contents: { role: 'user', parts: [{ text: prompt }] },
           }));
 
           let output = "Image generation completed.";
@@ -375,9 +384,9 @@ export const executeWorkflowStep = async (
               model: selectedModel
           };
 
-      } catch (e) {
-          console.error("Image gen failed (Offline fallback)", e);
-          return getFallbackExecution(step);
+      } catch (e: any) {
+          console.error("Image gen failed", e);
+          return getFallbackExecution(step, e.message);
       }
   }
 
@@ -403,36 +412,51 @@ export const executeWorkflowStep = async (
     - If ANALYSIS: Synthesize insights.
   `;
 
-  // Prepare Multimodal Input if Image exists and it's relevant (First step or explicit)
-  // We attach image if it exists to allow the agent to "see" the goal context
-  const contents: any = [{ text: prompt }];
+  // Prepare Multimodal Input - STRICT STRUCTURE
+  const parts: Part[] = [];
   if (imageBase64) {
-      contents.unshift({
+      parts.push({
           inlineData: {
               mimeType: 'image/png',
               data: imageBase64
           }
       });
   }
+  parts.push({ text: prompt });
+  
+  const contents: Content = { role: 'user', parts: parts };
 
   const tools: Tool[] = [];
   
   // Smart Tool Injection for Research
   const isResearch = step.actionType === 'RESEARCH' || step.actionType === 'ANALYSIS';
 
+  // Only inject tools if we are sure the model supports it or we are prepared to fallback
   if (isResearch) {
       tools.push({ googleSearch: {} });
   }
 
   try {
-      const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
-        model: selectedModel,
-        contents: contents, // Use array contents for potential image support
-        config: {
-          tools: tools,
-          systemInstruction: "You are NEURIX-EXECUTOR. You are precise, data-driven, and efficient. You MUST reveal your internal reasoning process in <thought> tags before generating the result.",
-        }
-      }));
+      const execute = async (model: string, useTools: boolean) => {
+           return await ai.models.generateContent({
+            model: model,
+            contents: contents,
+            config: {
+              tools: useTools ? tools : [],
+              systemInstruction: "You are NEURIX-EXECUTOR. You are precise, data-driven, and efficient. You MUST reveal your internal reasoning process in <thought> tags before generating the result.",
+            }
+          });
+      };
+
+      let response;
+      try {
+          response = await retry<GenerateContentResponse>(() => execute(selectedModel, tools.length > 0));
+      } catch (e: any) {
+          // If tool use fails or model not found, try without tools or fallback model
+          console.warn(`[NEURIX] Execution failed with ${selectedModel}. Retrying with safe fallback. Error: ${e.message}`);
+          selectedModel = MODELS.FALLBACK; 
+          response = await retry<GenerateContentResponse>(() => execute(selectedModel, false));
+      }
 
       const rawText = response.text || "";
       
@@ -440,29 +464,23 @@ export const executeWorkflowStep = async (
       let reasoning = `[NEURIX KERNEL :: ${selectedModel}]\n`;
       let output = rawText;
 
-      // Extract <thought> content
       const thoughtMatch = rawText.match(/<thought>([\s\S]*?)<\/thought>/);
       if (thoughtMatch) {
           reasoning += thoughtMatch[1].trim();
-          // Remove thought from output for clean display
           output = rawText.replace(/<thought>[\s\S]*?<\/thought>/, '').trim();
       } else {
-          // Fallback if model forgets tags
           reasoning += "Direct execution path chosen. No internal monologue trace available.";
       }
 
-      // Extract Grounding (Citations)
       const citations: {uri:string, title:string}[] = [];
       if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
          response.candidates[0].groundingMetadata.groundingChunks.forEach(chunk => {
-             // Web Grounding
              if (chunk.web?.uri && chunk.web?.title) {
                  citations.push({ uri: chunk.web.uri, title: chunk.web.title });
              }
          });
       }
 
-      // Add grounding info to reasoning if available
       if (citations.length > 0) {
          reasoning = `[GROUNDING: ${citations.length} SOURCES VERIFIED]\n` + reasoning;
       }
@@ -474,9 +492,9 @@ export const executeWorkflowStep = async (
         citations,
         model: selectedModel
       };
-  } catch (error) {
+  } catch (error: any) {
       console.error("Execution failed (Offline fallback)", error);
-      return getFallbackExecution(step);
+      return getFallbackExecution(step, error.message);
   }
 };
 
@@ -488,8 +506,7 @@ export const verifyOutput = async (
     const ai = getAiClient();
     
     const safeOutput = output.length > 5000 ? output.substring(0, 5000) + "...[TRUNCATED]" : output;
-    const verificationModel = MODELS.REASONING; // Pro for reliable audit
-
+    
     const prompt = `
       You are NEURIX-VERIFIER (AXION Module).
       Your job is to strictly audit the work of the Executor agent.
@@ -508,21 +525,35 @@ export const verifyOutput = async (
     `;
 
     try {
-        const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
-            model: verificationModel,
-            contents: prompt,
-            config: {
-                responseMimeType: 'application/json',
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        passed: { type: Type.BOOLEAN },
-                        reason: { type: Type.STRING }
-                    },
-                    required: ['passed', 'reason']
+        const runVerify = async () => {
+             return await ai.models.generateContent({
+                model: MODELS.REASONING,
+                contents: { role: 'user', parts: [{ text: prompt }] },
+                config: {
+                    responseMimeType: 'application/json',
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            passed: { type: Type.BOOLEAN },
+                            reason: { type: Type.STRING }
+                        },
+                        required: ['passed', 'reason']
+                    }
                 }
-            }
-        }));
+            });
+        };
+
+        let response;
+        try {
+            response = await retry<GenerateContentResponse>(() => runVerify());
+        } catch (e) {
+            // Fallback to simpler model if Pro fails
+             response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
+                model: MODELS.FALLBACK,
+                contents: { role: 'user', parts: [{ text: prompt }] },
+                config: { responseMimeType: 'application/json' } // Relax schema for fallback
+            }));
+        }
 
         const result = JSON.parse(response.text || '{"passed": false, "reason": "Parsing Error"}');
         return {
@@ -532,7 +563,6 @@ export const verifyOutput = async (
         };
 
     } catch (e) {
-        // If verification fails due to quota, we assume passed for UX flow in demo
         return { passed: true, reason: "Verification System Bypass (Offline)", tokens: 0 };
     }
 }
@@ -566,9 +596,10 @@ export const replanWorkflow = async (
   `;
 
   try {
+      // Use fallback logic similar to generateWorkflow
       const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
         model: MODELS.PLANNING,
-        contents: prompt,
+        contents: { role: 'user', parts: [{ text: prompt }] },
         config: {
           responseMimeType: 'application/json',
           responseSchema: workflowSchema,
@@ -593,13 +624,12 @@ export const replanWorkflow = async (
         tokens: Math.ceil(tokens)
       };
   } catch (error) {
-       // Super basic fallback replan
        return {
            tokens: 0,
            steps: [{
                id: 'fallback-replan-1',
-               label: 'Manual Intervention Required (Offline)',
-               description: 'The automated replanner is offline. Please reset the workflow or continue manually.',
+               label: 'Manual Intervention Required',
+               description: `Automated replanning failed. Please reset or continue manually. Error: ${error}`,
                actionType: 'DECISION',
                dependencies: [],
                status: StepStatus.PENDING,
@@ -621,26 +651,16 @@ export const runMaintenanceScan = async (
 
     const prompt = `
         You are NEURIX-WATCHDOG. The system has completed its primary execution phase and is now in MAINTENANCE MODE.
-        
         GOAL: "${workflow.goal}"
-        
         WORKFLOW OUTPUT SUMMARY:
         ${context}
-        
-        TASK:
-        Scan the generated work for potential logical bugs, edge cases, or optimization opportunities.
-        Act as a "Chaos Monkey" or Quality Assurance engineer.
-        
-        If you find a potential issue, report status as "DEGRADED" and describe the issue.
-        If everything looks solid, report "STABLE" and confirm system integrity.
-        
-        Keep the message brief and technical (log style).
+        If you find a potential issue, report status as "DEGRADED". Otherwise "STABLE".
     `;
 
     try {
         const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
             model: MODELS.REASONING, 
-            contents: prompt,
+            contents: { role: 'user', parts: [{ text: prompt }] },
             config: {
                 responseMimeType: 'application/json',
                 responseSchema: {

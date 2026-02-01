@@ -48,8 +48,8 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ onStart, agents }) =>
               <div className="flex items-start gap-3">
                   <span className="text-neurix-success mt-0.5 font-mono text-xs">02</span>
                   <p className="text-xs text-neurix-500">
-                    <strong className="text-neurix-300 block mb-0.5">Execution</strong>
-                    Specialists execute tasks in parallel with tool integrations.
+                    <strong className="text-neurix-300 block mb-0.5">Auto-Model Switching</strong>
+                    Dynamically switches between Gemini 3 Pro (Logic) and Flash (Speed) per step.
                   </p>
               </div>
               <div className="flex items-start gap-3">

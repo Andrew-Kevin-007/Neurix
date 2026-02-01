@@ -41,25 +41,35 @@ async function retry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promis
     }
 }
 
-// --- MODEL REGISTRY ---
+// --- MODEL REGISTRY & AUTO-SWITCHING LOGIC ---
 export const getModelForAction = (actionType: string): string => {
     switch(actionType) {
-        case 'CODE': return 'gemini-3-flash-preview';
+        // COMPLEX REASONING TASKS -> GEMINI 3 PRO
+        case 'PLANNING': 
+        case 'CODE': 
+            return 'gemini-3-pro-preview';
+            
+        // CREATIVE VISUAL TASKS -> GEMINI 2.5 IMAGE
+        case 'CREATION': 
+            return 'gemini-2.5-flash-image';
+            
+        // FAST EXECUTION / RETRIEVAL -> GEMINI 3 FLASH
         case 'RESEARCH':
         case 'ANALYSIS':
-        case 'DECISION': return 'gemini-3-flash-preview';
-        case 'CREATION': return 'gemini-2.5-flash-image';
-        case 'PLANNING': return 'gemini-3-flash-preview';
-        case 'INTEGRATION': return 'gemini-3-flash-preview'; 
-        default: return 'gemini-3-flash-preview';
+        case 'INTEGRATION': 
+        case 'DECISION': 
+            return 'gemini-3-flash-preview';
+            
+        default: 
+            return 'gemini-3-flash-preview';
     }
 };
 
 const MODELS = {
-    CODING: 'gemini-3-flash-preview',
-    REASONING: 'gemini-3-flash-preview', 
+    CODING: 'gemini-3-pro-preview',
+    REASONING: 'gemini-3-pro-preview', 
     CREATIVE: 'gemini-2.5-flash-image',
-    PLANNING: 'gemini-3-flash-preview',
+    PLANNING: 'gemini-3-pro-preview',
     GENERAL: 'gemini-3-flash-preview'
 };
 
@@ -212,9 +222,9 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
   }
 
   try {
-    // Planning uses Gemini 3 for reliable schema following
+    // Planning uses Gemini 3 Pro for robust reasoning and schema adherence
     const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
-      model: MODELS.PLANNING,
+      model: MODELS.PLANNING, // Gemini 3 Pro
       contents: contents,
       config: {
         responseMimeType: 'application/json',
@@ -276,7 +286,7 @@ export const executeWorkflowStep = async (
     })
     .join('\n\n');
 
-  // --- MODEL SELECTION LOGIC ---
+  // --- AUTO MODEL SWITCHING ---
   const selectedModel = getModelForAction(step.actionType);
 
   // --- BRANCH 1: INTEGRATION AGENT (Improved Simulation) ---
@@ -299,7 +309,7 @@ export const executeWorkflowStep = async (
 
       try {
           const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
-             model: MODELS.GENERAL,
+             model: MODELS.GENERAL, // Flash is sufficient for simulation
              contents: simulationPrompt
           }));
           
@@ -478,7 +488,7 @@ export const verifyOutput = async (
     const ai = getAiClient();
     
     const safeOutput = output.length > 5000 ? output.substring(0, 5000) + "...[TRUNCATED]" : output;
-    const verificationModel = MODELS.REASONING;
+    const verificationModel = MODELS.REASONING; // Pro for reliable audit
 
     const prompt = `
       You are NEURIX-VERIFIER (AXION Module).

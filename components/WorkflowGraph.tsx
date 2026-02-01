@@ -229,6 +229,9 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                 const overlay = executionOverlay[node.id];
                 const agent = overlay?.assignedAgentId ? agents[overlay.assignedAgentId] : null;
 
+                // Determine active model to display (from overlay if running, or from history if completed)
+                const activeModel = overlay?.activeModel || node.executedModel;
+
                 // Color Scheme Logic
                 let mainColor = 'border-neurix-800';
                 let textColor = 'text-neurix-400';
@@ -298,6 +301,18 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                             <div className={`text-xs font-medium leading-snug z-10 line-clamp-2 ${isCompleted ? 'text-neurix-400' : 'text-neurix-100'}`}>
                                 {node.label}
                             </div>
+
+                            {/* Model Badge (Auto-Switching Indicator) */}
+                            {activeModel && (
+                                <div className="absolute bottom-2 right-4 z-10">
+                                    <div className="flex items-center gap-1 opacity-70">
+                                        <div className="w-1 h-1 rounded-full bg-neurix-500"></div>
+                                        <span className="text-[8px] font-mono uppercase tracking-tight text-neurix-400">
+                                            {activeModel.replace('gemini-', '').replace('-preview', '').replace('-latest', '').replace('image', 'IMG')}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Active Indicator Bar */}
                             {(isRunning || isWaiting) && (

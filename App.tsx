@@ -541,6 +541,13 @@ export default function App() {
     return () => clearInterval(interval);
   }, [agentState, addLog, emitTimelineEvent, speak, updateAgentMetrics, playSfx]);
 
+  // Helper for Copying Text
+  const copyToClipboard = (text: string) => {
+      navigator.clipboard.writeText(text);
+      playSfx('SUCCESS');
+      addLog('INFO', 'Output copied to clipboard.');
+  };
+
   return (
     <div className="relative w-screen h-[100dvh] overflow-hidden font-sans selection:bg-neurix-accent/30 text-neurix-300">
       {!hasVisited && <OnboardingModal agents={AGENTS} onStart={() => { setHasVisited(true); runBootSequence(); }} />}
@@ -704,16 +711,34 @@ export default function App() {
                                      
                                      {selectedStep.output && (
                                          <div>
-                                             <label className="text-[9px] font-mono text-neurix-600 uppercase tracking-widest block mb-2">Output</label>
+                                             <div className="flex items-center justify-between mb-2">
+                                                <label className="text-[9px] font-mono text-neurix-600 uppercase tracking-widest">Output</label>
+                                                {!selectedStep.output.startsWith('data:image') && (
+                                                    <button onClick={() => copyToClipboard(selectedStep.output!)} className="text-[9px] text-neurix-500 hover:text-white flex items-center gap-1 transition-colors">
+                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 011.414.586l4.414 4.414a1 1 0 01.586 1.414V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 01-2-2V5a2 2 0 012-2h4.586" /></svg>
+                                                        COPY
+                                                    </button>
+                                                )}
+                                             </div>
                                              <div className="bg-black/30 rounded border border-white/5 overflow-hidden">
                                                  {selectedStep.output.startsWith('data:image') ? (
-                                                     <img src={selectedStep.output} className="w-full opacity-80" />
+                                                     <img src={selectedStep.output} className="w-full opacity-90 hover:opacity-100 transition-opacity" />
                                                  ) : (
-                                                     <div className="p-3 text-[10px] font-mono text-neurix-300 leading-relaxed whitespace-pre-wrap">
-                                                         {selectedStep.output.replace(/```/g, '').slice(0, 300)}...
+                                                     <div className="p-3 text-[10px] font-mono text-neurix-300 leading-relaxed whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto custom-scrollbar select-text">
+                                                         {/* Improved rendering for formatting */}
+                                                         {selectedStep.output.replace(/```/g, '')}
                                                      </div>
                                                  )}
                                              </div>
+                                         </div>
+                                     )}
+                                     
+                                     {selectedStep.reasoningTrace && (
+                                         <div>
+                                            <label className="text-[9px] font-mono text-neurix-600 uppercase tracking-widest block mb-2">Neural Trace</label>
+                                            <div className="bg-white/[0.02] rounded p-3 text-[9px] text-neurix-500 font-mono border-l-2 border-neurix-accent/30 italic">
+                                                {selectedStep.reasoningTrace}
+                                            </div>
                                          </div>
                                      )}
                                  </div>

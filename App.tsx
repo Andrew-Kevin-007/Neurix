@@ -76,6 +76,18 @@ export default function App() {
   useEffect(() => { metricsRef.current = metrics; }, [metrics]);
   useEffect(() => { executionOverlayRef.current = executionOverlay; }, [executionOverlay]);
 
+  // Cleanup Audio Context and Speech Synthesis on unmount
+  useEffect(() => {
+      return () => {
+          if (audioContextRef.current) {
+              audioContextRef.current.close().catch(console.error);
+          }
+          if ('speechSynthesis' in window) {
+              window.speechSynthesis.cancel();
+          }
+      };
+  }, []);
+
   // Persist Goal to Neural Memory
   useEffect(() => {
       localStorage.setItem('neurix_last_goal', goal);

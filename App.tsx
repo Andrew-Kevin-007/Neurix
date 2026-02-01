@@ -102,8 +102,13 @@ export default function App() {
         audioContextRef.current.resume();
     }
     // Ensure voices are loaded (Chrome quirk)
+    const loadVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) return;
+    };
+    loadVoices();
     if (window.speechSynthesis) {
-        window.speechSynthesis.getVoices();
+        window.speechSynthesis.onvoiceschanged = loadVoices;
     }
   }, []);
 
@@ -591,7 +596,10 @@ export default function App() {
                          </div>
                      </div>
                  </div>
-                 <div className="md:hidden">
+                 <div className="flex gap-2 md:hidden">
+                    <button onClick={resetSystem} className="p-2 rounded-lg bg-white/5 border border-white/10 text-neurix-400 hover:text-white">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    </button>
                     <button onClick={toggleMute} className={`p-2 rounded-lg border transition-all ${isMuted ? 'bg-neurix-danger/10 border-neurix-danger/30 text-neurix-danger' : 'bg-white/5 border-white/10 text-neurix-400 hover:text-white'}`}>
                         {isMuted ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg> : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>}
                     </button>
@@ -601,7 +609,12 @@ export default function App() {
              <div className="glass-panel px-6 py-3 rounded-2xl hidden md:flex items-center gap-8">
                  <PerformanceGraph history={metricHistory} agents={AGENTS} activeAgentIds={activeAgentIds} />
                  <div className="w-px h-6 bg-white/10" />
-                 <AgentStatusDisplay state={agentState} />
+                 <div className="flex items-center gap-3">
+                    <AgentStatusDisplay state={agentState} />
+                    <button onClick={resetSystem} className="p-2 rounded-lg hover:bg-white/10 text-neurix-500 hover:text-white transition-colors" title="Hard Reset System">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    </button>
+                 </div>
              </div>
              <div className="glass-panel px-4 py-2 rounded-xl md:hidden flex justify-center">
                  <AgentStatusDisplay state={agentState} />

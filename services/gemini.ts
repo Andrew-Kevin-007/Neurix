@@ -636,6 +636,76 @@ export const replanWorkflow = async (
   }
 };
 
+export const generateRemediationPlan = async (
+  goal: string,
+  issue: string,
+  existingSteps: WorkflowStep[]
+): Promise<{ steps: WorkflowStep[], tokens: number }> => {
+    const ai = getAiClient();
+    const lastStep = existingSteps[existingSteps.length - 1];
+    
+    // Generate a unique ID prefix based on time to avoid collisions with existing steps
+    const idPrefix = `fix-${Date.now().toString().slice(-4)}`;
+
+    const prompt = `
+        SYSTEM ALERT: Maintenance Anomaly Detected.
+        GOAL: "${goal}"
+        ISSUE: "${issue}"
+        
+        The previous workflow has finished, but the system state is DEGRADED.
+        Create a SHORT remediation workflow branch (1-3 steps) to fix this specific issue and verify stability.
+        
+        The new steps should start by analyzing the issue, then fixing it.
+        Make sure the first new step depends on the last completed step ID: "${lastStep.id}".
+        
+        Output JSON with 'steps' array matching the workflow schema. 
+        IMPORTANT: Ensure all new step IDs start with "${idPrefix}-".
+    `;
+
+    try {
+        const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
+            model: MODELS.PLANNING,
+            contents: { role: 'user', parts: [{ text: prompt }] },
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: workflowSchema,
+            }
+        }));
+
+        const data = JSON.parse(response.text || '{}');
+        const tokens = response.usageMetadata?.totalTokenCount || 500;
+
+        return {
+            steps: data.steps.map((s: any) => ({
+                id: s.id.startsWith(idPrefix) ? s.id : `${idPrefix}-${s.id}`, // Enforce prefix if model forgot
+                label: s.label,
+                description: s.description,
+                actionType: s.actionType,
+                dependencies: s.dependencies && s.dependencies.length > 0 ? s.dependencies : [lastStep.id],
+                parameters: transformParams(s.parameters),
+                alternatives: s.alternatives || [],
+                assignedAgentId: s.assignedAgentId,
+                status: StepStatus.PENDING,
+            })),
+            tokens: Math.ceil(tokens)
+        };
+    } catch (e) {
+        console.error("Remediation generation failed", e);
+        return {
+            tokens: 0,
+            steps: [{
+                id: `${idPrefix}-fallback`,
+                label: 'Manual System Check',
+                description: `Automated remediation planning failed. Operator attention required for issue: ${issue}`,
+                actionType: 'DECISION',
+                dependencies: [lastStep.id],
+                status: StepStatus.PENDING,
+                assignedAgentId: 'sys-router'
+            }]
+        };
+    }
+};
+
 export const runMaintenanceScan = async (
     workflow: Workflow
 ): Promise<{ status: 'STABLE' | 'DEGRADED', message: string, tokens: number }> => {
@@ -651,7 +721,7 @@ export const runMaintenanceScan = async (
         GOAL: "${workflow.goal}"
         WORKFLOW OUTPUT SUMMARY:
         ${context}
-        If you find a potential issue, report status as "DEGRADED". Otherwise "STABLE".
+        If you find a potential issue or if the output suggests instability, report status as "DEGRADED". Otherwise "STABLE".
     `;
 
     try {

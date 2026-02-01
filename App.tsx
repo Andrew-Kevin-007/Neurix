@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AgentState, Workflow, WorkflowStep, StepStatus, LogEntry, TimelineEvent, TimelineEventType, AgentIdentity, ExecutionOverlay, ThoughtSignature, AgentMetrics, MetricHistoryPoint, Artifact } from './types';
-import { generateWorkflow, executeWorkflowStep, replanWorkflow, verifyOutput, runMaintenanceScan, getModelForAction } from './services/gemini';
+import { generateWorkflow, executeWorkflowStep, replanWorkflow, verifyOutput, runMaintenanceScan, getModelForAction, generateRemediationPlan } from './services/gemini';
 import WorkflowGraph from './components/WorkflowGraph';
 import LogViewer from './components/LogViewer';
 import TimelineViewer from './components/TimelineViewer';
@@ -535,6 +535,43 @@ export default function App() {
       setGoal(prev => (prev ? `${prev} ${text}` : text));
   };
 
+  // --- AUTO-REMEDIATION LOGIC ---
+  const handleRemediation = useCallback(async (issue: string) => {
+      if (!workflowRef.current) return;
+      playSfx('ALERT');
+      setAgentState(AgentState.PLANNING); // Show active state
+      speak("Anomaly detected. Initiating remediation protocols.");
+      addLog('WARNING', `Maintenance Alert: ${issue}. Generating fixes...`, { agentName: 'AXION', agentColor: AGENTS.VERIFIER.color });
+      
+      try {
+          const { steps: remediationSteps, tokens } = await generateRemediationPlan(
+              workflowRef.current.goal, 
+              issue, 
+              workflowRef.current.steps
+          );
+          
+          updateAgentMetrics(AGENTS.PLANNER.id, { tokens, confidence: 0.9 });
+          
+          setWorkflow(prev => {
+              if (!prev) return null;
+              return {
+                  ...prev,
+                  steps: [...prev.steps, ...remediationSteps]
+              };
+          });
+          
+          emitTimelineEvent('PHASE_CHANGE', AGENTS.PLANNER, 'Remediation branch created.');
+          addLog('SUCCESS', 'Counter-measures generated. Resuming execution.');
+          
+          setAgentState(AgentState.EXECUTING);
+          
+      } catch (e) {
+          console.error("Remediation failed", e);
+          addLog('ERROR', 'Failed to generate remediation plan. Maintenance halted.');
+          setAgentState(AgentState.FAILED); 
+      }
+  }, [updateAgentMetrics, playSfx, speak, addLog, emitTimelineEvent]);
+
   // Maintenance Loop
   useEffect(() => {
     if (agentState !== AgentState.MAINTENANCE) return;
@@ -546,17 +583,15 @@ export default function App() {
             const scan = await runMaintenanceScan(workflowRef.current);
             updateAgentMetrics(AGENTS.VERIFIER.id, { tokens: scan.tokens });
             if (scan.status === 'DEGRADED') {
-                playSfx('ALERT');
-                addLog('WARNING', `Anomaly Detected: ${scan.message}`, { agentName: 'AXION', agentColor: AGENTS.VERIFIER.color });
-                emitTimelineEvent('MAINTENANCE_REPORT', AGENTS.VERIFIER, `Anomaly: ${scan.message}`);
-                speak("Anomaly detected in maintenance scan.");
+                // Auto-trigger remediation logic
+                handleRemediation(scan.message);
             } else {
                 addLog('SUCCESS', `System Stable: ${scan.message}`, { agentName: 'AXION', agentColor: AGENTS.VERIFIER.color });
             }
         } catch (e) { console.error("Maintenance scan failed", e); }
-    }, 15000);
+    }, 15000); // 15s interval
     return () => clearInterval(interval);
-  }, [agentState, addLog, emitTimelineEvent, speak, updateAgentMetrics, playSfx]);
+  }, [agentState, addLog, emitTimelineEvent, updateAgentMetrics, handleRemediation]);
 
   // Helper for Copying Text
   const copyToClipboard = (text: string) => {
@@ -611,13 +646,23 @@ export default function App() {
                  <div className="w-px h-6 bg-white/10" />
                  <div className="flex items-center gap-3">
                     <AgentStatusDisplay state={agentState} />
+                    {agentState === AgentState.MAINTENANCE && (
+                        <button onClick={stopMaintenance} className="px-3 py-1.5 rounded bg-neurix-800 border border-white/10 hover:border-white/20 text-[10px] font-bold text-neurix-300 hover:text-white transition-colors uppercase tracking-wide">
+                            Stop Maint.
+                        </button>
+                    )}
                     <button onClick={resetSystem} className="p-2 rounded-lg hover:bg-white/10 text-neurix-500 hover:text-white transition-colors" title="Hard Reset System">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                     </button>
                  </div>
              </div>
-             <div className="glass-panel px-4 py-2 rounded-xl md:hidden flex justify-center">
+             <div className="glass-panel px-4 py-2 rounded-xl md:hidden flex justify-center flex-col items-center gap-2">
                  <AgentStatusDisplay state={agentState} />
+                 {agentState === AgentState.MAINTENANCE && (
+                    <button onClick={stopMaintenance} className="px-4 py-1.5 w-full rounded bg-white/5 border border-white/10 text-[10px] font-bold text-neurix-300 uppercase">
+                        Stop Maint.
+                    </button>
+                 )}
              </div>
          </header>
 

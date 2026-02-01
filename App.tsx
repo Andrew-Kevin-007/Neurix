@@ -243,7 +243,7 @@ export default function App() {
           playSfx('SUCCESS');
           emitTimelineEvent('ARTIFACT_GENERATED', AGENTS.VORTEX, `Created ${newArtifacts.length} deliverables.`);
       }
-  }, [addLog, playSfx]); // Added playSfx dependency
+  }, [addLog, playSfx]); 
 
   const runBootSequence = useCallback(async () => {
     initAudio();
@@ -343,7 +343,6 @@ export default function App() {
       }, 200);
 
       try {
-          // PASS SELECTED IMAGE TO EXECUTOR (If available)
           const result = await executeWorkflowStep(step, contextWorkflow.steps, contextWorkflow.goal, selectedImage);
           
           clearInterval(tokenStreamer);
@@ -374,7 +373,7 @@ export default function App() {
           setWorkflow(prev => prev ? ({ ...prev, steps: prev.steps.map(s => s.id === step.id ? { ...s, status: StepStatus.FAILED, error: String(e) } : s) }) : null);
           await handleFailure(step, contextWorkflow.steps, String(e), contextWorkflow.goal);
       }
-  }, [emitTimelineEvent, updateAgentMetrics, addLog, speak, extractArtifacts, playSfx, selectedImage]); // Added selectedImage dependency
+  }, [emitTimelineEvent, updateAgentMetrics, addLog, speak, extractArtifacts, playSfx, selectedImage]); 
 
   const handleApproval = (approved: boolean) => {
       if (!pendingApprovalStep) return;
@@ -476,7 +475,7 @@ export default function App() {
   };
 
   const handleGeneratePlan = async (customGoal?: string) => {
-    initAudio(); // Ensure audio context is resumed on user interaction
+    initAudio(); 
     playSfx('CLICK');
     const targetGoal = customGoal || goal;
     if (!targetGoal.trim()) return;
@@ -563,7 +562,7 @@ export default function App() {
       {/* LAYER 1: Fluid Layout HUD */}
       <div className="absolute inset-0 z-20 pointer-events-none flex flex-col h-full overflow-hidden">
          
-         {/* HEADER - Responsive Row/Column */}
+         {/* HEADER */}
          <header className="shrink-0 p-4 md:p-6 flex flex-col md:flex-row justify-between items-stretch md:items-start gap-3 pointer-events-auto">
              <div className="glass-panel px-4 py-3 rounded-2xl flex items-center justify-between md:justify-start gap-4">
                  <div className="flex items-center gap-3">
@@ -579,7 +578,6 @@ export default function App() {
                          </div>
                      </div>
                  </div>
-                 {/* Mobile Mute Toggle only */}
                  <div className="md:hidden">
                     <button onClick={toggleMute} className={`p-2 rounded-lg border transition-all ${isMuted ? 'bg-neurix-danger/10 border-neurix-danger/30 text-neurix-danger' : 'bg-white/5 border-white/10 text-neurix-400 hover:text-white'}`}>
                         {isMuted ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg> : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>}
@@ -592,7 +590,6 @@ export default function App() {
                  <div className="w-px h-6 bg-white/10" />
                  <AgentStatusDisplay state={agentState} />
              </div>
-             {/* Mobile Status Bar - Only shows essential status */}
              <div className="glass-panel px-4 py-2 rounded-xl md:hidden flex justify-center">
                  <AgentStatusDisplay state={agentState} />
              </div>
@@ -601,7 +598,7 @@ export default function App() {
          {/* MAIN CONTENT AREA */}
          <div className="flex-1 min-h-0 flex gap-4 md:gap-6 px-4 md:px-6 pb-4 md:pb-6 overflow-hidden">
              
-             {/* LEFT: Timeline (Desktop: Always, Mobile/Tablet: Toggled) */}
+             {/* LEFT: Timeline */}
              <aside className={`
                 flex-col min-h-0 pointer-events-auto transition-all duration-300 ease-in-out
                 ${isEditingPlan ? 'opacity-0 pointer-events-none' : 'opacity-100'}
@@ -612,7 +609,7 @@ export default function App() {
                  </div>
              </aside>
 
-             {/* CENTER: Graph/Input (Desktop: Always, Mobile: Toggled) */}
+             {/* CENTER: Graph/Input */}
              <main className={`
                 relative flex flex-col items-center justify-end
                 ${mobileTab === 'GRAPH' ? 'flex-1' : 'hidden lg:flex flex-1'}
@@ -643,7 +640,6 @@ export default function App() {
                                 autoFocus
                              />
                              
-                             {/* Voice Input Integration */}
                              <VoiceInput 
                                 onTranscript={handleVoiceTranscript} 
                                 isProcessing={agentState === AgentState.PLANNING}
@@ -678,7 +674,7 @@ export default function App() {
                  )}
              </main>
 
-             {/* RIGHT: Inspector (Desktop: Always, Mobile: Toggled) */}
+             {/* RIGHT: Inspector */}
              <aside className={`
                 flex-col min-h-0 pointer-events-auto transition-all duration-300 ease-in-out
                 ${isEditingPlan ? 'opacity-0 pointer-events-none' : 'opacity-100'}
@@ -725,11 +721,24 @@ export default function App() {
                                                      <img src={selectedStep.output} className="w-full opacity-90 hover:opacity-100 transition-opacity" />
                                                  ) : (
                                                      <div className="p-3 text-[10px] font-mono text-neurix-300 leading-relaxed whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto custom-scrollbar select-text">
-                                                         {/* Improved rendering for formatting */}
                                                          {selectedStep.output.replace(/```/g, '')}
                                                      </div>
                                                  )}
                                              </div>
+                                         </div>
+                                     )}
+
+                                     {selectedStep.citations && selectedStep.citations.length > 0 && (
+                                         <div>
+                                            <label className="text-[9px] font-mono text-neurix-600 uppercase tracking-widest block mb-2">Sources / Grounding</label>
+                                            <div className="bg-white/[0.02] rounded p-2 border border-white/5 space-y-1">
+                                                {selectedStep.citations.map((c, i) => (
+                                                    <a key={i} href={c.uri} target="_blank" rel="noopener noreferrer" className="block text-[10px] text-neurix-400 hover:text-neurix-accent truncate flex items-center gap-2">
+                                                        <span className="w-1 h-1 rounded-full bg-neurix-500"></span>
+                                                        {c.title}
+                                                    </a>
+                                                ))}
+                                            </div>
                                          </div>
                                      )}
                                      

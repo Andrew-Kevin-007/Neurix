@@ -19,7 +19,6 @@ async function retry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promis
         return await fn();
     } catch (e: any) {
         // FAIL FAST CHECK:
-        // If it's a quota error (429), do NOT retry. Fail immediately to trigger Offline Mode.
         const isQuotaError = e.message?.includes('quota') || 
                              e.message?.includes('429') || 
                              e.status === 429 || 
@@ -31,7 +30,6 @@ async function retry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promis
              throw e; 
         }
 
-        // Retry on transient network/server errors (5xx)
         if (retries > 0) {
             console.warn(`[NEURIX KERNEL] Transient error detected (${e.status || e.message || 'Network'}). Retrying in ${delay}ms...`);
             await wait(delay);
@@ -242,7 +240,6 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
         });
     };
 
-    // Try Primary Model, Fallback to Safe Model if 404/400
     let response;
     try {
         response = await retry<GenerateContentResponse>(() => runGeneration(MODELS.PLANNING));
@@ -366,8 +363,8 @@ export const executeWorkflowStep = async (
              for (const part of response.candidates[0].content.parts) {
                  if (part.inlineData) {
                      const base64Str = part.inlineData.data;
-                     // Store as Data URI for immediate frontend rendering
-                     output = `data:image/png;base64,${base64Str}`;
+                     const mimeType = part.inlineData.mimeType || 'image/png'; // Use returned mimeType
+                     output = `data:${mimeType};base64,${base64Str}`;
                      imageFound = true;
                  } else if (part.text) {
                      // Capture any accompanying text

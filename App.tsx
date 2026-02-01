@@ -180,9 +180,10 @@ export default function App() {
   const activeAgentIds = React.useMemo(() => {
       if (!workflow) return [];
       const runningSteps = workflow.steps.filter(s => s.status === StepStatus.RUNNING);
-      return runningSteps
+      const ids = runningSteps
         .map(s => executionOverlay[s.id]?.assignedAgentId)
         .filter(id => id !== undefined) as string[];
+      return Array.from(new Set(ids)); // Deduplicate
   }, [workflow, executionOverlay]);
 
   const speak = useCallback((text: string, priority: boolean = false) => {

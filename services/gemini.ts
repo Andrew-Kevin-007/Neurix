@@ -92,7 +92,7 @@ const stepSchema: Schema = {
         type: Type.OBJECT,
         properties: {
           key: { type: Type.STRING },
-          value: { type: Type.STRING, description: "Keep values short (under 200 chars). NO BASE64 OR IMAGE DATA." }
+          value: { type: Type.STRING, description: "Keep values short (under 100 chars). NO BASE64 OR IMAGE DATA." }
         },
         required: ['key', 'value']
       },
@@ -204,7 +204,7 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
     CONSTRAINTS:
     1. Action Type: Use 'INTEGRATION' if the step involves an external tool. Use 'toolId' to specify which one.
     2. Parameters: Be very specific. For Slack, specify 'channel' and 'message_template'. 
-    3. IMPORTANT: NEVER output Base64 image data in parameters. Never repeat the full image data. Keep parameter values short (< 200 chars).
+    3. CRITICAL: NEVER output Base64 image data in parameters. Keep all parameter values very short (< 200 chars). Do not include long code blocks as parameters; describe them instead.
     4. Dependencies: Logical flow is critical.
     
     Return a clean JSON object.
@@ -235,7 +235,7 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
           config: {
             responseMimeType: 'application/json',
             responseSchema: workflowSchema,
-            systemInstruction: "You are an expert systems planner. Break down complex goals into executable steps. CRITICAL: Never include base64 image data or extremely long strings in the JSON output. Keep it concise.",
+            systemInstruction: "You are an expert systems planner. Break down complex goals into executable steps. CRITICAL: Never include base64 image data or extremely long strings in the JSON output. Keep parameter values concise. If you need to reference a file, use a placeholder like '[Image File]'.",
             maxOutputTokens: 8192,
             // Enable Native Thinking for deeper planning logic
             thinkingConfig: { thinkingBudget: 2048 } 
@@ -253,6 +253,13 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
 
     let text = response.text || '{}';
     text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
+    // Safety: Try to repair truncated JSON if it looks like it ended abruptly
+    if (text.endsWith('"') || text.endsWith(',') || text.endsWith(':') || text.endsWith('{') || text.endsWith('[')) {
+       // A very basic attempt to close structures if they look obviously incomplete
+       // This is a last ditch effort before failing
+       if (!text.endsWith('}')) text += '}]}';
+    }
 
     const data = JSON.parse(text);
     if (!data.steps || !Array.isArray(data.steps)) {

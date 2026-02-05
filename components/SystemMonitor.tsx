@@ -8,25 +8,30 @@ interface SystemMonitorProps {
   history: MetricHistoryPoint[];
 }
 
-// Helper for smooth Bezier curves
-const getSmoothPath = (points: {x: number, y: number}[]) => {
+// Robust path generator with fallback
+const getPath = (points: {x: number, y: number}[], smooth: boolean = true) => {
   if (points.length === 0) return '';
-  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  // Ensure valid numbers
+  const validPoints = points.filter(p => !isNaN(p.x) && !isNaN(p.y));
+  if (validPoints.length === 0) return '';
+  if (validPoints.length === 1) return `M ${validPoints[0].x} ${validPoints[0].y} h 1`; // Small dot
 
-  let d = `M ${points[0].x} ${points[0].y}`;
+  let d = `M ${validPoints[0].x.toFixed(2)} ${validPoints[0].y.toFixed(2)}`;
 
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i];
-    const p1 = points[i + 1];
+  for (let i = 0; i < validPoints.length - 1; i++) {
+    const p0 = validPoints[i];
+    const p1 = validPoints[i + 1];
     
-    // Control points for a smooth S-curve interpolation
-    // This creates a fluid transition between points
-    const cp1x = p0.x + (p1.x - p0.x) * 0.5;
-    const cp1y = p0.y;
-    const cp2x = p0.x + (p1.x - p0.x) * 0.5;
-    const cp2y = p1.y;
-
-    d += ` C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${p1.x} ${p1.y}`;
+    if (smooth) {
+        // Control points for a smooth S-curve interpolation
+        const cp1x = p0.x + (p1.x - p0.x) * 0.5;
+        const cp1y = p0.y;
+        const cp2x = p0.x + (p1.x - p0.x) * 0.5;
+        const cp2y = p1.y;
+        d += ` C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)} ${cp2x.toFixed(2)} ${cp2y.toFixed(2)} ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`;
+    } else {
+        d += ` L ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`;
+    }
   }
   return d;
 };
@@ -50,12 +55,12 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, agents, history 
   };
 
   const graphData = useMemo(() => {
-    // If no history, return empty
-    if (history.length < 2) return { paths: {}, minY: 0, maxY: 50 };
+    // If no history, return empty defaults
+    if (!history || history.length < 2) return { paths: {}, minY: 0, maxY: 50 };
 
     const now = Date.now();
     const startTime = history[0].timestamp;
-    // Keep a consistent window (e.g. 10 seconds) or dynamic based on history depth
+    // Ensure timeWindow is never zero to avoid divide-by-zero
     const timeWindow = Math.max(now - startTime, 10000); 
 
     const paths: Record<string, string> = {};
@@ -69,29 +74,35 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, agents, history 
 
     agentIds.forEach(id => {
         const agentHistory = history.filter(h => h.agentId === id);
-        if (agentHistory.length < 2) return;
+        // Need at least 2 points to calculate a delta, or 1 point + current idle state
+        if (agentHistory.length === 0) return;
 
         const points: {x: number, y: number}[] = [];
         
-        agentHistory.forEach((pt, i) => {
-            if (i === 0) return; // Need previous point for delta
-            const prev = agentHistory[i-1];
-            
-            // Calculate Delta (Tokens generated since last update)
-            const delta = pt.metrics.tokenUsage - prev.metrics.tokenUsage;
-            if (delta > globalMaxDelta) globalMaxDelta = delta;
-
-            const x = ((pt.timestamp - startTime) / timeWindow) * 100;
-            points.push({ x, y: delta });
-        });
+        // If we have history, calculate deltas
+        if (agentHistory.length > 1) {
+            agentHistory.forEach((pt, i) => {
+                if (i === 0) return; // Need previous point
+                const prev = agentHistory[i-1];
+                const delta = pt.metrics.tokenUsage - prev.metrics.tokenUsage;
+                if (delta > globalMaxDelta) globalMaxDelta = delta;
+                
+                // Clamp X between 0 and 100
+                const x = Math.min(100, Math.max(0, ((pt.timestamp - startTime) / timeWindow) * 100));
+                points.push({ x, y: delta });
+            });
+        } else {
+            // Only 1 point, treat as start
+            points.push({ x: 0, y: 0 });
+        }
 
         // Extend to "Now" - Drop to zero if no recent activity (Heartbeat effect)
         const lastPt = points[points.length - 1];
         if (lastPt) {
-            const currentX = ((now - startTime) / timeWindow) * 100;
-            // If the last update was recent (<500ms), hold the value, otherwise drop to 0
-            const isRecent = (now - agentHistory[agentHistory.length-1].timestamp) < 500;
-            // Add intermediate point for smoother drop-off if needed, but simple drop is okay with bezier
+            const currentX = 100; // Always end at right edge
+            const lastTimestamp = agentHistory[agentHistory.length-1].timestamp;
+            // If the last update was recent (<1000ms), hold the value, otherwise drop to 0
+            const isRecent = (now - lastTimestamp) < 1000;
             points.push({ x: currentX, y: isRecent ? lastPt.y : 0 });
         }
 
@@ -104,16 +115,20 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, agents, history 
         if (points.length === 0) return;
 
         // Normalize points to screen coordinates
+        // SVG ViewBox is 0 0 100 100
         const screenPoints = points.map(pt => {
-             // Normalize Y (0 to globalMax) -> (100 to 0 coords)
-             // Use Math.max(globalMaxDelta, 1) to prevent division by zero
-             const normalizedY = pt.y / Math.max(globalMaxDelta, 1);
-             // Use 90% of height, with 5% padding at bottom
-             const y = 100 - (normalizedY * 90) - 5; 
+             // Normalize Y (0 to globalMax) -> (height coords)
+             const safeMax = Math.max(globalMaxDelta, 1);
+             const normalizedY = pt.y / safeMax;
+             
+             // Map to Y pixels: 
+             // 0 value -> 95 (bottom)
+             // Max value -> 5 (top)
+             const y = 95 - (normalizedY * 90); 
              return { x: pt.x, y };
         });
 
-        paths[id] = getSmoothPath(screenPoints);
+        paths[id] = getPath(screenPoints, true);
     });
 
     return { paths, minY: 0, maxY: globalMaxDelta };
@@ -174,7 +189,6 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, agents, history 
                                         strokeWidth="2" 
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
-                                        vectorEffect="non-scaling-stroke"
                                         className="transition-all duration-300"
                                      />
                                  );

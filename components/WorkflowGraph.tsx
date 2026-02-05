@@ -128,10 +128,14 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
       }
   };
 
-  // Initial Center
+  // Trigger Center when nodes are populated
   useEffect(() => {
-     if (steps.length < 3) centerGraph();
-  }, [layout.nodes.length === 0]); 
+     if (layout.nodes.length > 0) {
+         // Small timeout to ensure DOM is ready
+         const timer = setTimeout(centerGraph, 100);
+         return () => clearTimeout(timer);
+     }
+  }, [layout.nodes.length]); 
 
   // Responsive Resize Listener
   useEffect(() => {

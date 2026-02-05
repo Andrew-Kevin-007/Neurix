@@ -385,11 +385,25 @@ export default function App() {
               setWorkflow(prev => prev ? ({ ...prev, steps: prev.steps.map(s => s.id === step.id ? { ...s, status: StepStatus.FAILED, error: verification.reason } : s) }) : null);
               await handleFailure(step, contextWorkflow.steps, verification.reason, contextWorkflow.goal);
           }
-      } catch (e) {
+      } catch (e: any) {
           clearInterval(tokenStreamer);
           playSfx('ERROR');
-          setWorkflow(prev => prev ? ({ ...prev, steps: prev.steps.map(s => s.id === step.id ? { ...s, status: StepStatus.FAILED, error: String(e) } : s) }) : null);
-          await handleFailure(step, contextWorkflow.steps, String(e), contextWorkflow.goal);
+          
+          const errorMsg = String(e.message || e);
+          
+          // Enhanced Error Handling
+          if (errorMsg.includes('QUOTA_EXCEEDED')) {
+              addLog('ERROR', 'API Quota Exceeded. Entering Offline Simulation Mode.');
+              speak("Quota limit reached. Switching to simulation.");
+              // Don't mark as failed, maybe pause or switch mode? 
+              // For now, we fail and let handleFailure decide
+          } else if (errorMsg.includes('SAFETY_BLOCK')) {
+               addLog('WARNING', 'Content Safety Violation. Re-routing task...');
+               speak("Safety violation detected.");
+          }
+
+          setWorkflow(prev => prev ? ({ ...prev, steps: prev.steps.map(s => s.id === step.id ? { ...s, status: StepStatus.FAILED, error: errorMsg } : s) }) : null);
+          await handleFailure(step, contextWorkflow.steps, errorMsg, contextWorkflow.goal);
       }
   }, [emitTimelineEvent, updateAgentMetrics, addLog, speak, extractArtifacts, playSfx, selectedImage]); 
 
@@ -441,6 +455,13 @@ export default function App() {
   }, [activeAgentIds, triggerStepExecution, addLog, speak, playSfx]);
 
   const handleFailure = async (failedStep: WorkflowStep, allSteps: WorkflowStep[], error: string, goal: string) => {
+      // Special Handling for Quota
+      if (error.includes('QUOTA_EXCEEDED')) {
+           addLog('WARNING', 'System Offline. Cannot replan due to API limits.');
+           setAgentState(AgentState.PAUSED); 
+           return;
+      }
+
       addLog('ERROR', `Failure detected in ${failedStep.label}. Initiating replan...`, { agentName: 'ROUTER', agentColor: AGENTS.ROUTER.color });
       try {
           const killList = new Set<string>();
@@ -513,11 +534,18 @@ export default function App() {
       emitTimelineEvent('AGENT_HANDOFF', AGENTS.PLANNER, 'Workflow Generated. Awaiting Approval.');
       addLog('SUCCESS', 'Workflow generated successfully.', { tokensUsed: tokens, stepCount: steps.length });
       speak("Workflow generated. Awaiting approval.");
-    } catch (error) {
+    } catch (error: any) {
       setAgentState(AgentState.FAILED);
       playSfx('ERROR');
-      addLog('ERROR', String(error));
-      speak("Error generating workflow.");
+      
+      const errMsg = error.message || String(error);
+      if (errMsg.includes('QUOTA')) {
+          addLog('ERROR', 'API Quota Exceeded. System Halted.');
+          speak("Quota exceeded. System halted.");
+      } else {
+          addLog('ERROR', errMsg);
+          speak("Error generating workflow.");
+      }
     }
   };
 

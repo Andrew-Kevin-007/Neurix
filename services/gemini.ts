@@ -14,30 +14,90 @@ const getAiClient = () => {
 // --- RELIABILITY UTILS ---
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function retry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
+enum ErrorCategory {
+    TRANSIENT = 'TRANSIENT',   // 503, Network
+    PERMANENT = 'PERMANENT',   // 400, Invalid Argument
+    QUOTA = 'QUOTA',           // 429
+    SAFETY = 'SAFETY',         // Blocked by safety settings
+    PARSING = 'PARSING',       // JSON parse error
+    UNKNOWN = 'UNKNOWN'
+}
+
+const classifyError = (e: any): ErrorCategory => {
+    const msg = (e.message || '').toLowerCase();
+    const status = e.status;
+    
+    if (msg.includes('429') || msg.includes('quota') || msg.includes('resource_exhausted')) return ErrorCategory.QUOTA;
+    if (msg.includes('503') || msg.includes('500') || msg.includes('fetch failed') || msg.includes('network')) return ErrorCategory.TRANSIENT;
+    if (msg.includes('safety') || msg.includes('blocked') || msg.includes('policy')) return ErrorCategory.SAFETY;
+    if (status >= 400 && status < 500) return ErrorCategory.PERMANENT;
+    if (msg.includes('json') || msg.includes('parse')) return ErrorCategory.PARSING;
+    
+    return ErrorCategory.UNKNOWN;
+};
+
+// Advanced Retry with Exponential Backoff
+async function retry<T>(fn: () => Promise<T>, retries = 3, delay = 1000, context = "Operation"): Promise<T> {
     try {
         return await fn();
     } catch (e: any) {
-        // FAIL FAST CHECK:
-        const isQuotaError = e.message?.includes('quota') || 
-                             e.message?.includes('429') || 
-                             e.status === 429 || 
-                             e.message?.includes('Too Many Requests') ||
-                             e.message?.includes('RESOURCE_EXHAUSTED');
+        const category = classifyError(e);
+        
+        // CIRCUIT BREAKER: Fail fast on Quota or Safety
+        if (category === ErrorCategory.QUOTA) {
+             console.warn(`[NEURIX] ${context}: Quota Exceeded. Aborting retries.`);
+             throw new Error("[QUOTA_EXCEEDED] API limit reached. Switching to Offline Mode.");
+        }
+        
+        if (category === ErrorCategory.SAFETY) {
+             console.warn(`[NEURIX] ${context}: Safety Block.`);
+             throw new Error("[SAFETY_BLOCK] Content filtered by safety policy.");
+        }
 
-        if (isQuotaError) {
-             console.warn("[NEURIX] API Quota Exceeded. Switching to Offline Simulation immediately.");
-             throw e; 
+        if (category === ErrorCategory.PERMANENT) {
+             console.error(`[NEURIX] ${context}: Permanent Error (4xx).`);
+             throw e; // Don't retry client errors
         }
 
         if (retries > 0) {
-            console.warn(`[NEURIX KERNEL] Transient error detected (${e.status || e.message || 'Network'}). Retrying in ${delay}ms...`);
+            console.warn(`[NEURIX] ${context}: Transient error (${category}). Retrying in ${delay}ms...`);
             await wait(delay);
-            return retry(fn, retries - 1, delay * 2);
+            // Jitter the delay slightly to prevent thundering herd
+            const jitter = Math.random() * 200;
+            return retry(fn, retries - 1, delay * 2 + jitter, context);
         }
         throw e;
     }
 }
+
+// Self-Healing JSON Mechanism
+const repairJson = async (brokenJson: string, errorMsg: string): Promise<any> => {
+    console.log("[NEURIX] Attempting JSON Repair...");
+    const ai = getAiClient();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: {
+                role: 'user',
+                parts: [{ text: `
+                    Fix this malformed JSON string. 
+                    Error: ${errorMsg}
+                    
+                    Broken JSON:
+                    ${brokenJson.substring(0, 10000)} // Truncate to avoid context limit
+                    
+                    Return ONLY the raw valid JSON. No markdown.
+                `}]
+            },
+            config: { responseMimeType: 'application/json' }
+        });
+        
+        const fixedText = response.text || '{}';
+        return JSON.parse(fixedText);
+    } catch (e) {
+        throw new Error("JSON Repair Failed");
+    }
+};
 
 // --- MODEL REGISTRY & AUTO-SWITCHING LOGIC ---
 export const getModelForAction = (actionType: string): string => {
@@ -45,18 +105,17 @@ export const getModelForAction = (actionType: string): string => {
         // COMPLEX REASONING TASKS -> GEMINI 3 PRO
         case 'PLANNING': 
         case 'CODE': 
+        case 'ANALYSIS':
+        case 'DECISION':
             return 'gemini-3-pro-preview';
             
-        // CREATIVE VISUAL TASKS -> NANO BANANA PRO (GEMINI 3 PRO IMAGE)
-        // Updated for "Creative Autopilot" Track
+        // CREATIVE VISUAL TASKS -> NANO BANANA PRO
         case 'CREATION': 
             return 'gemini-3-pro-image-preview';
             
         // FAST EXECUTION / RETRIEVAL -> GEMINI 3 FLASH
         case 'RESEARCH':
-        case 'ANALYSIS':
         case 'INTEGRATION': 
-        case 'DECISION': 
             return 'gemini-3-flash-preview';
             
         default: 
@@ -67,11 +126,10 @@ export const getModelForAction = (actionType: string): string => {
 const MODELS = {
     CODING: 'gemini-3-pro-preview',
     REASONING: 'gemini-3-pro-preview', 
-    CREATIVE: 'gemini-3-pro-image-preview', // Upgraded
+    CREATIVE: 'gemini-3-pro-image-preview',
     PLANNING: 'gemini-3-pro-preview',
     GENERAL: 'gemini-3-flash-preview',
-    // Fallback if 3-series is not enabled for the key
-    FALLBACK: 'gemini-2.0-flash-exp'
+    FALLBACK: 'gemini-3-flash-preview'
 };
 
 // Types for JSON schemas
@@ -237,7 +295,6 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
             responseSchema: workflowSchema,
             systemInstruction: "You are an expert systems planner. Break down complex goals into executable steps. CRITICAL: Never include base64 image data or extremely long strings in the JSON output. Keep parameter values concise. If you need to reference a file, use a placeholder like '[Image File]'.",
             maxOutputTokens: 8192,
-            // Enable Native Thinking for deeper planning logic
             thinkingConfig: { thinkingBudget: 2048 } 
           },
         });
@@ -245,10 +302,13 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
 
     let response;
     try {
-        response = await retry<GenerateContentResponse>(() => runGeneration(MODELS.PLANNING));
+        response = await retry<GenerateContentResponse>(() => runGeneration(MODELS.PLANNING), 2, 1000, "Planning");
     } catch (e: any) {
+        // Fallback Logic
+        if (e.message.includes('SAFETY_BLOCK')) throw e; // Don't fallback for safety
+        
         console.warn(`[NEURIX] Planning with ${MODELS.PLANNING} failed, trying fallback ${MODELS.FALLBACK}. Error: ${e.message}`);
-        response = await retry<GenerateContentResponse>(() => runGeneration(MODELS.FALLBACK));
+        response = await retry<GenerateContentResponse>(() => runGeneration(MODELS.FALLBACK), 1, 1000, "Planning Fallback");
     }
 
     let text = response.text || '{}';
@@ -256,12 +316,17 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
 
     // Safety: Try to repair truncated JSON if it looks like it ended abruptly
     if (text.endsWith('"') || text.endsWith(',') || text.endsWith(':') || text.endsWith('{') || text.endsWith('[')) {
-       // A very basic attempt to close structures if they look obviously incomplete
-       // This is a last ditch effort before failing
        if (!text.endsWith('}')) text += '}]}';
     }
 
-    const data = JSON.parse(text);
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch (e) {
+        // TRIGGER SELF-HEALING
+        data = await repairJson(text, String(e));
+    }
+
     if (!data.steps || !Array.isArray(data.steps)) {
       throw new Error("Invalid workflow format received");
     }
@@ -294,7 +359,7 @@ export const executeWorkflowStep = async (
   step: WorkflowStep, 
   previousSteps: WorkflowStep[],
   goal: string,
-  imageBase64?: string | null // NEW: Receive Image Context
+  imageBase64?: string | null 
 ): Promise<{ output: string; reasoning: string; tokens: number; citations: {uri:string, title:string}[]; model: string }> => {
   const ai = getAiClient();
 
@@ -330,7 +395,7 @@ export const executeWorkflowStep = async (
           const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
              model: MODELS.GENERAL, // Flash is sufficient for simulation
              contents: { role: 'user', parts: [{ text: simulationPrompt }] }
-          }));
+          }), 2, 1000, "Integration Sim");
           
           return {
               output: response.text || `[SUCCESS] ${tool} executed successfully.`,
@@ -352,7 +417,6 @@ export const executeWorkflowStep = async (
 
   // --- BRANCH 2: VISUAL CREATION AGENT ---
   if (step.actionType === 'CREATION') {
-      // NOTE: Gemini 3 Pro Image (Nano Banana Pro) supports 1K, 2K, 4K
       const prompt = `
         Create a high-quality visual asset based on this request.
         Request: ${step.description}
@@ -365,27 +429,24 @@ export const executeWorkflowStep = async (
               model: selectedModel, 
               contents: { role: 'user', parts: [{ text: prompt }] },
               config: {
-                  // Specific config for Image models
                   imageConfig: {
                     aspectRatio: "1:1",
                     imageSize: "1K" 
                   }
               }
-          }));
+          }), 1, 1000, "Image Gen"); // Fewer retries for heavy media models
 
           let output = "Image generation completed.";
           let imageFound = false;
 
-          // Iterate parts to find the image
           if (response.candidates?.[0]?.content?.parts) {
              for (const part of response.candidates[0].content.parts) {
                  if (part.inlineData) {
                      const base64Str = part.inlineData.data;
-                     const mimeType = part.inlineData.mimeType || 'image/png'; // Use returned mimeType
+                     const mimeType = part.inlineData.mimeType || 'image/png'; 
                      output = `data:${mimeType};base64,${base64Str}`;
                      imageFound = true;
                  } else if (part.text) {
-                     // Capture any accompanying text
                      if (!imageFound) output = part.text;
                  }
              }
@@ -427,7 +488,6 @@ export const executeWorkflowStep = async (
     - If ANALYSIS: Synthesize insights.
   `;
 
-  // Prepare Multimodal Input - STRICT STRUCTURE
   const parts: Part[] = [];
   if (imageBase64) {
       parts.push({
@@ -442,17 +502,14 @@ export const executeWorkflowStep = async (
   const contents: Content = { role: 'user', parts: parts };
 
   const tools: Tool[] = [];
-  
-  // Smart Tool Injection for Research
   const isResearch = step.actionType === 'RESEARCH' || step.actionType === 'ANALYSIS';
 
-  // Only inject tools if we are sure the model supports it or we are prepared to fallback
   if (isResearch) {
       tools.push({ googleSearch: {} });
   }
 
-  // Determine if we should use Native Thinking (Code & Planning tasks)
-  const useThinking = step.actionType === 'CODE' || step.actionType === 'ANALYSIS';
+  // Enhanced: Now includes Decision and Analysis for deeper reasoning
+  const useThinking = ['CODE', 'ANALYSIS', 'DECISION', 'PLANNING'].includes(step.actionType);
 
   try {
       const execute = async (model: string, useTools: boolean) => {
@@ -463,7 +520,6 @@ export const executeWorkflowStep = async (
               tools: useTools ? tools : [],
               systemInstruction: "You are NEURIX-EXECUTOR. You are precise, data-driven, and efficient. You MUST reveal your internal reasoning process in <thought> tags before generating the result.",
               maxOutputTokens: 8192,
-              // Inject thinking budget for complex tasks to ensure high quality code/analysis
               thinkingConfig: useThinking ? { thinkingBudget: 2048 } : undefined
             }
           });
@@ -471,12 +527,23 @@ export const executeWorkflowStep = async (
 
       let response;
       try {
-          response = await retry<GenerateContentResponse>(() => execute(selectedModel, tools.length > 0));
+          response = await retry<GenerateContentResponse>(() => execute(selectedModel, tools.length > 0), 2, 2000, "Execution");
       } catch (e: any) {
+          // If safety blocked it, return a sanitized failure
+          if (e.message.includes('SAFETY_BLOCK')) {
+              return {
+                  output: "[SAFETY PROTOCOL ENGAGED] The request was flagged by content safety filters.",
+                  reasoning: "Safety violation detected. Aborting execution to maintain safe operational parameters.",
+                  tokens: 0,
+                  citations: [],
+                  model: selectedModel
+              };
+          }
+          
           // If tool use fails or model not found, try without tools or fallback model
           console.warn(`[NEURIX] Execution failed with ${selectedModel}. Retrying with safe fallback. Error: ${e.message}`);
           selectedModel = MODELS.FALLBACK; 
-          response = await retry<GenerateContentResponse>(() => execute(selectedModel, false));
+          response = await retry<GenerateContentResponse>(() => execute(selectedModel, false), 2, 1000, "Execution Fallback");
       }
 
       const rawText = response.text || "";
@@ -560,7 +627,6 @@ export const verifyOutput = async (
                         },
                         required: ['passed', 'reason']
                     },
-                    // Verification is critical, so we allocate a thinking budget
                     thinkingConfig: { thinkingBudget: 1024 }
                 }
             });
@@ -568,17 +634,22 @@ export const verifyOutput = async (
 
         let response;
         try {
-            response = await retry<GenerateContentResponse>(() => runVerify());
+            response = await retry<GenerateContentResponse>(() => runVerify(), 2, 1000, "Verification");
         } catch (e) {
-            // Fallback to simpler model if Pro fails
              response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
                 model: MODELS.FALLBACK,
                 contents: { role: 'user', parts: [{ text: prompt }] },
-                config: { responseMimeType: 'application/json' } // Relax schema for fallback
-            }));
+                config: { responseMimeType: 'application/json' }
+            }), 2, 1000, "Verification Fallback");
         }
 
-        const result = JSON.parse(response.text || '{"passed": false, "reason": "Parsing Error"}');
+        let result;
+        try {
+            result = JSON.parse(response.text || '{"passed": false, "reason": "Parsing Error"}');
+        } catch (e) {
+            result = await repairJson(response.text || '', "Verification JSON invalid");
+        }
+
         return {
             passed: result.passed,
             reason: result.reason,
@@ -626,11 +697,17 @@ export const replanWorkflow = async (
         config: {
           responseMimeType: 'application/json',
           responseSchema: workflowSchema,
-          thinkingConfig: { thinkingBudget: 2048 } // Replanning needs deep thought
+          thinkingConfig: { thinkingBudget: 2048 } 
         }
-      }));
+      }), 2, 2000, "Replanning");
 
-      const data = JSON.parse(response.text || '{}');
+      let data;
+      try {
+          data = JSON.parse(response.text || '{}');
+      } catch(e) {
+          data = await repairJson(response.text || '', "Replanning JSON invalid");
+      }
+
       const tokens = response.usageMetadata?.totalTokenCount || 500;
 
       return {
@@ -671,7 +748,6 @@ export const generateRemediationPlan = async (
     const ai = getAiClient();
     const lastStep = existingSteps[existingSteps.length - 1];
     
-    // Generate a unique ID prefix based on time to avoid collisions with existing steps
     const idPrefix = `fix-${Date.now().toString().slice(-4)}`;
 
     const prompt = `
@@ -701,15 +777,21 @@ export const generateRemediationPlan = async (
                 responseSchema: workflowSchema,
                 thinkingConfig: { thinkingBudget: 1024 }
             }
-        }));
+        }), 2, 2000, "Remediation");
 
-        const data = JSON.parse(response.text || '{}');
+        let data;
+        try {
+            data = JSON.parse(response.text || '{}');
+        } catch (e) {
+            data = await repairJson(response.text || '', "Remediation JSON invalid");
+        }
+        
         const tokens = response.usageMetadata?.totalTokenCount || 500;
 
         return {
             steps: data.steps.map((s: any) => ({
-                id: s.id.startsWith(idPrefix) ? s.id : `${idPrefix}-${s.id}`, // Enforce prefix if model forgot
-                label: `[HOTFIX] ${s.label}`, // Add visual tag
+                id: s.id.startsWith(idPrefix) ? s.id : `${idPrefix}-${s.id}`, 
+                label: `[HOTFIX] ${s.label}`, 
                 description: s.description,
                 actionType: s.actionType,
                 dependencies: s.dependencies && s.dependencies.length > 0 ? s.dependencies : [lastStep.id],
@@ -777,11 +859,17 @@ export const runMaintenanceScan = async (
                     },
                     required: ['status', 'message']
                 },
-                thinkingConfig: { thinkingBudget: 512 } // Quick diagnostic thought
+                thinkingConfig: { thinkingBudget: 512 } 
             }
-        }));
+        }), 2, 2000, "Maintenance Scan");
 
-        const result = JSON.parse(response.text || '{"status": "STABLE", "message": "Monitoring active."}');
+        let result;
+        try {
+            result = JSON.parse(response.text || '{"status": "STABLE", "message": "Monitoring active."}');
+        } catch(e) {
+             result = { status: 'STABLE', message: 'Monitoring active (Parse Error)'};
+        }
+        
         return {
             status: result.status,
             message: result.message,

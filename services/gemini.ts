@@ -47,9 +47,10 @@ export const getModelForAction = (actionType: string): string => {
         case 'CODE': 
             return 'gemini-3-pro-preview';
             
-        // CREATIVE VISUAL TASKS -> GEMINI 2.5 IMAGE
+        // CREATIVE VISUAL TASKS -> NANO BANANA PRO (GEMINI 3 PRO IMAGE)
+        // Updated for "Creative Autopilot" Track
         case 'CREATION': 
-            return 'gemini-2.5-flash-image';
+            return 'gemini-3-pro-image-preview';
             
         // FAST EXECUTION / RETRIEVAL -> GEMINI 3 FLASH
         case 'RESEARCH':
@@ -66,7 +67,7 @@ export const getModelForAction = (actionType: string): string => {
 const MODELS = {
     CODING: 'gemini-3-pro-preview',
     REASONING: 'gemini-3-pro-preview', 
-    CREATIVE: 'gemini-2.5-flash-image',
+    CREATIVE: 'gemini-3-pro-image-preview', // Upgraded
     PLANNING: 'gemini-3-pro-preview',
     GENERAL: 'gemini-3-flash-preview',
     // Fallback if 3-series is not enabled for the key
@@ -235,7 +236,9 @@ export const generateWorkflow = async (goal: string, imageBase64?: string | null
             responseMimeType: 'application/json',
             responseSchema: workflowSchema,
             systemInstruction: "You are an expert systems planner. Break down complex goals into executable steps. CRITICAL: Never include base64 image data or extremely long strings in the JSON output. Keep it concise.",
-            maxOutputTokens: 8192, 
+            maxOutputTokens: 8192,
+            // Enable Native Thinking for deeper planning logic
+            thinkingConfig: { thinkingBudget: 2048 } 
           },
         });
     };
@@ -342,6 +345,7 @@ export const executeWorkflowStep = async (
 
   // --- BRANCH 2: VISUAL CREATION AGENT ---
   if (step.actionType === 'CREATION') {
+      // NOTE: Gemini 3 Pro Image (Nano Banana Pro) supports 1K, 2K, 4K
       const prompt = `
         Create a high-quality visual asset based on this request.
         Request: ${step.description}
@@ -351,8 +355,15 @@ export const executeWorkflowStep = async (
       
       try {
           const response = await retry<GenerateContentResponse>(() => ai.models.generateContent({
-              model: selectedModel, // gemini-2.5-flash-image
+              model: selectedModel, 
               contents: { role: 'user', parts: [{ text: prompt }] },
+              config: {
+                  // Specific config for Image models
+                  imageConfig: {
+                    aspectRatio: "1:1",
+                    imageSize: "1K" 
+                  }
+              }
           }));
 
           let output = "Image generation completed.";
@@ -375,7 +386,7 @@ export const executeWorkflowStep = async (
 
           return {
               output: output,
-              reasoning: `[VISUAL CORTEX :: ${selectedModel}]\n1. Analyzing visual requirements from parameters.\n2. Constructing latent space projection.\n3. Rendering asset at 1024x1024.\n4. Output encoded to Base64 stream.`,
+              reasoning: `[VISUAL CORTEX :: ${selectedModel}]\n1. Analyzing visual requirements from parameters.\n2. Constructing latent space projection.\n3. Rendering asset at 1024x1024 (Nano Banana Pro).\n4. Output encoded to Base64 stream.`,
               tokens: response.usageMetadata?.totalTokenCount || 500,
               citations: [],
               model: selectedModel
@@ -405,7 +416,7 @@ export const executeWorkflowStep = async (
     2. Then, provide the final output.
     
     - If RESEARCH: Use Google Search to find facts.
-    - If CODE: Write the code.
+    - If CODE: Write the complete, runnable code. Wrap it in standard markdown code blocks (e.g. \`\`\`html ... \`\`\`).
     - If ANALYSIS: Synthesize insights.
   `;
 
@@ -433,6 +444,9 @@ export const executeWorkflowStep = async (
       tools.push({ googleSearch: {} });
   }
 
+  // Determine if we should use Native Thinking (Code & Planning tasks)
+  const useThinking = step.actionType === 'CODE' || step.actionType === 'ANALYSIS';
+
   try {
       const execute = async (model: string, useTools: boolean) => {
            return await ai.models.generateContent({
@@ -441,6 +455,9 @@ export const executeWorkflowStep = async (
             config: {
               tools: useTools ? tools : [],
               systemInstruction: "You are NEURIX-EXECUTOR. You are precise, data-driven, and efficient. You MUST reveal your internal reasoning process in <thought> tags before generating the result.",
+              maxOutputTokens: 8192,
+              // Inject thinking budget for complex tasks to ensure high quality code/analysis
+              thinkingConfig: useThinking ? { thinkingBudget: 2048 } : undefined
             }
           });
       };
@@ -466,7 +483,7 @@ export const executeWorkflowStep = async (
           reasoning += thoughtMatch[1].trim();
           output = rawText.replace(/<thought>[\s\S]*?<\/thought>/, '').trim();
       } else {
-          reasoning += "Direct execution path chosen. No internal monologue trace available.";
+          reasoning += "Direct execution path chosen. Native thinking applied in background.";
       }
 
       const citations: {uri:string, title:string}[] = [];
@@ -535,7 +552,9 @@ export const verifyOutput = async (
                             reason: { type: Type.STRING }
                         },
                         required: ['passed', 'reason']
-                    }
+                    },
+                    // Verification is critical, so we allocate a thinking budget
+                    thinkingConfig: { thinkingBudget: 1024 }
                 }
             });
         };
@@ -600,6 +619,7 @@ export const replanWorkflow = async (
         config: {
           responseMimeType: 'application/json',
           responseSchema: workflowSchema,
+          thinkingConfig: { thinkingBudget: 2048 } // Replanning needs deep thought
         }
       }));
 
@@ -655,8 +675,11 @@ export const generateRemediationPlan = async (
         The previous workflow has finished, but the system state is DEGRADED.
         Create a SHORT remediation workflow branch (1-3 steps) to fix this specific issue and verify stability.
         
-        The new steps should start by analyzing the issue, then fixing it.
-        Make sure the first new step depends on the last completed step ID: "${lastStep.id}".
+        Rules:
+        1. Start with an ANALYSIS step to diagnose the root cause.
+        2. Follow with a CODE or INTEGRATION step to apply the fix (Hotfix).
+        3. End with a DECISION step to verify the fix.
+        4. Make sure the first new step depends on the last completed step ID: "${lastStep.id}".
         
         Output JSON with 'steps' array matching the workflow schema. 
         IMPORTANT: Ensure all new step IDs start with "${idPrefix}-".
@@ -669,6 +692,7 @@ export const generateRemediationPlan = async (
             config: {
                 responseMimeType: 'application/json',
                 responseSchema: workflowSchema,
+                thinkingConfig: { thinkingBudget: 1024 }
             }
         }));
 
@@ -678,13 +702,13 @@ export const generateRemediationPlan = async (
         return {
             steps: data.steps.map((s: any) => ({
                 id: s.id.startsWith(idPrefix) ? s.id : `${idPrefix}-${s.id}`, // Enforce prefix if model forgot
-                label: s.label,
+                label: `[HOTFIX] ${s.label}`, // Add visual tag
                 description: s.description,
                 actionType: s.actionType,
                 dependencies: s.dependencies && s.dependencies.length > 0 ? s.dependencies : [lastStep.id],
                 parameters: transformParams(s.parameters),
                 alternatives: s.alternatives || [],
-                assignedAgentId: s.assignedAgentId,
+                assignedAgentId: s.assignedAgentId || 'axion-ov',
                 status: StepStatus.PENDING,
             })),
             tokens: Math.ceil(tokens)
@@ -695,7 +719,7 @@ export const generateRemediationPlan = async (
             tokens: 0,
             steps: [{
                 id: `${idPrefix}-fallback`,
-                label: 'Manual System Check',
+                label: '[HOTFIX] Manual System Check',
                 description: `Automated remediation planning failed. Operator attention required for issue: ${issue}`,
                 actionType: 'DECISION',
                 dependencies: [lastStep.id],
@@ -721,7 +745,15 @@ export const runMaintenanceScan = async (
         GOAL: "${workflow.goal}"
         WORKFLOW OUTPUT SUMMARY:
         ${context}
-        If you find a potential issue or if the output suggests instability, report status as "DEGRADED". Otherwise "STABLE".
+        
+        TASK:
+        Perform a simulated "Chaos Monkey" audit. Look for:
+        1. Potential security vulnerabilities in code.
+        2. Logic gaps in the plan.
+        3. Missing edge case handling.
+        
+        If you find a plausible issue, report status as "DEGRADED" with the specific issue description.
+        If everything is perfect, report "STABLE".
     `;
 
     try {
@@ -737,7 +769,8 @@ export const runMaintenanceScan = async (
                         message: { type: Type.STRING }
                     },
                     required: ['status', 'message']
-                }
+                },
+                thinkingConfig: { thinkingBudget: 512 } // Quick diagnostic thought
             }
         }));
 

@@ -37,6 +37,10 @@ const styles = `
   .node-wrapper {
     transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
   }
+  
+  .glow-amber {
+    box-shadow: 0 0 15px rgba(245, 158, 11, 0.3);
+  }
 `;
 
 const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onStepClick, executionOverlay = {}, agents = {} }) => {
@@ -198,8 +202,13 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                     const isRunning = edge.status === StepStatus.RUNNING;
                     const isCompleted = edge.status === StepStatus.COMPLETED;
                     const isFailed = edge.status === StepStatus.FAILED;
+                    const isRemediation = edge.from.id.startsWith('fix-') || edge.to.id.startsWith('fix-');
                     
-                    const color = isFailed ? "#EF4444" : isCompleted ? "#34D399" : "#8B5CF6";
+                    // Determine color
+                    let color = "#8B5CF6"; // Default Purple
+                    if (isFailed) color = "#EF4444";
+                    else if (isRemediation) color = "#F59E0B"; // Amber for fixes
+                    else if (isCompleted) color = "#34D399";
                     
                     return (
                         <g key={edge.id}>
@@ -225,11 +234,11 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                 const isPending = node.status === StepStatus.PENDING;
                 const isWaiting = node.status === StepStatus.WAITING_FOR_APPROVAL;
                 const isIntegration = node.actionType === 'INTEGRATION';
+                const isRemediation = node.id.startsWith('fix-') || node.id.startsWith('replan-');
                 
                 const overlay = executionOverlay[node.id];
                 const agent = overlay?.assignedAgentId ? agents[overlay.assignedAgentId] : null;
 
-                // Determine active model to display (from overlay if running, or from history if completed)
                 const activeModel = overlay?.activeModel || node.executedModel;
 
                 // Color Scheme Logic
@@ -248,6 +257,10 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                 } else if (isFailed) {
                    mainColor = 'border-red-500';
                    textColor = 'text-red-400';
+                } else if (isRemediation) {
+                    mainColor = 'border-amber-500';
+                    textColor = 'text-amber-400';
+                    shadow = isRunning ? 'shadow-[0_0_15px_rgba(245,158,11,0.3)]' : '';
                 } else if (isCompleted) {
                    mainColor = 'border-emerald-500/50';
                    textColor = 'text-emerald-400';
@@ -287,7 +300,7 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                                         {node.id.split('-').pop()?.slice(0,4)}
                                     </span>
                                     <span className={`text-[10px] font-bold uppercase tracking-wider ${textColor} mt-0.5`}>
-                                        {node.actionType} {node.toolId ? `:: ${node.toolId.toUpperCase()}` : ''}
+                                        {isRemediation ? 'AUTO-REPAIR' : node.actionType} {node.toolId ? `:: ${node.toolId.toUpperCase()}` : ''}
                                     </span>
                                 </div>
                                 {agent && (

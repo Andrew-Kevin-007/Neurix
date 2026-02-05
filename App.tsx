@@ -647,9 +647,14 @@ export default function App() {
                  <div className="flex items-center gap-3">
                     <AgentStatusDisplay state={agentState} />
                     {agentState === AgentState.MAINTENANCE && (
-                        <button onClick={stopMaintenance} className="px-3 py-1.5 rounded bg-neurix-800 border border-white/10 hover:border-white/20 text-[10px] font-bold text-neurix-300 hover:text-white transition-colors uppercase tracking-wide">
-                            Stop Maint.
-                        </button>
+                        <div className="flex gap-2">
+                             <button onClick={() => handleRemediation("Simulated Security Anomaly detected in Module 3.")} className="px-3 py-1.5 rounded bg-neurix-warning/10 border border-neurix-warning/30 hover:bg-neurix-warning/20 text-[10px] font-bold text-neurix-warning transition-colors uppercase tracking-wide animate-pulse">
+                                Inject Anomaly
+                             </button>
+                             <button onClick={stopMaintenance} className="px-3 py-1.5 rounded bg-neurix-800 border border-white/10 hover:border-white/20 text-[10px] font-bold text-neurix-300 hover:text-white transition-colors uppercase tracking-wide">
+                                Stop
+                             </button>
+                        </div>
                     )}
                     <button onClick={resetSystem} className="p-2 rounded-lg hover:bg-white/10 text-neurix-500 hover:text-white transition-colors" title="Hard Reset System">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -659,9 +664,14 @@ export default function App() {
              <div className="glass-panel px-4 py-2 rounded-xl md:hidden flex justify-center flex-col items-center gap-2">
                  <AgentStatusDisplay state={agentState} />
                  {agentState === AgentState.MAINTENANCE && (
-                    <button onClick={stopMaintenance} className="px-4 py-1.5 w-full rounded bg-white/5 border border-white/10 text-[10px] font-bold text-neurix-300 uppercase">
-                        Stop Maint.
-                    </button>
+                    <div className="flex gap-2 w-full">
+                         <button onClick={() => handleRemediation("Simulated Anomaly Detected.")} className="flex-1 px-4 py-1.5 rounded bg-neurix-warning/10 border border-neurix-warning/30 text-[10px] font-bold text-neurix-warning uppercase">
+                             Fix Anomaly
+                         </button>
+                         <button onClick={stopMaintenance} className="flex-1 px-4 py-1.5 rounded bg-white/5 border border-white/10 text-[10px] font-bold text-neurix-300 uppercase">
+                             Stop
+                         </button>
+                    </div>
                  )}
              </div>
          </header>

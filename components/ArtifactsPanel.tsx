@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Artifact } from '../types';
 
 interface ArtifactsPanelProps {
@@ -7,14 +7,14 @@ interface ArtifactsPanelProps {
 }
 
 const ArtifactsPanel: React.FC<ArtifactsPanelProps> = ({ artifacts }) => {
-  
+  const [previewArtifact, setPreviewArtifact] = useState<Artifact | null>(null);
+
   const handleDownload = (artifact: Artifact) => {
       let content = artifact.content;
       let mimeType = 'text/plain';
       let extension = 'txt';
 
       if (artifact.type === 'IMAGE') {
-          // It's likely a data URI
           const link = document.createElement('a');
           link.href = content;
           link.download = artifact.title || `generated-image-${artifact.id}.png`;
@@ -27,6 +27,7 @@ const ArtifactsPanel: React.FC<ArtifactsPanelProps> = ({ artifacts }) => {
           if (extension === 'python') extension = 'py';
           if (extension === 'javascript') extension = 'js';
           if (extension === 'typescript') extension = 'ts';
+          if (extension === 'html') extension = 'html';
       }
 
       const blob = new Blob([content], { type: mimeType });
@@ -55,8 +56,13 @@ const ArtifactsPanel: React.FC<ArtifactsPanelProps> = ({ artifacts }) => {
       }
   };
 
+  const isPreviewable = (artifact: Artifact) => {
+    return artifact.type === 'CODE' && (artifact.language === 'html' || artifact.language === 'javascript');
+  };
+
   return (
-    <div className="flex flex-col h-full animate-fade-in">
+    <>
+    <div className="flex flex-col h-full animate-fade-in relative">
         <div className="p-5 border-b border-white/5 bg-white/[0.02] backdrop-blur-md sticky top-0 z-10 flex justify-between items-center">
             <div>
                 <span className="text-[9px] font-bold text-neurix-500 uppercase tracking-widest block mb-1">Project Files</span>
@@ -87,13 +93,24 @@ const ArtifactsPanel: React.FC<ArtifactsPanelProps> = ({ artifacts }) => {
                                     <span className="text-[9px] text-neurix-600">{new Date(artifact.timestamp).toLocaleTimeString()}</span>
                                 </div>
                             </div>
-                            <button 
-                                onClick={() => handleDownload(artifact)}
-                                className="p-2 rounded hover:bg-white/10 text-neurix-500 hover:text-white transition-colors"
-                                title="Download"
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                            </button>
+                            <div className="flex gap-1">
+                                {isPreviewable(artifact) && (
+                                    <button 
+                                        onClick={() => setPreviewArtifact(artifact)}
+                                        className="p-2 rounded hover:bg-white/10 text-neurix-accent hover:text-white transition-colors"
+                                        title="Live Preview"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={() => handleDownload(artifact)}
+                                    className="p-2 rounded hover:bg-white/10 text-neurix-500 hover:text-white transition-colors"
+                                    title="Download"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                </button>
+                            </div>
                         </div>
                         {artifact.type === 'CODE' && (
                             <div className="mt-3 p-2 bg-black/50 rounded border border-white/5 overflow-hidden">
@@ -112,6 +129,41 @@ const ArtifactsPanel: React.FC<ArtifactsPanelProps> = ({ artifacts }) => {
             )}
         </div>
     </div>
+
+    {/* PREVIEW MODAL */}
+    {previewArtifact && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur flex items-center justify-center p-4 sm:p-8 animate-fade-in">
+            <div className="w-full h-full max-w-6xl bg-neurix-900 border border-white/10 rounded-2xl flex flex-col shadow-2xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-black/20">
+                    <div className="flex items-center gap-3">
+                         <div className="p-1.5 rounded bg-neurix-accent/10 border border-neurix-accent/20">
+                            <svg className="w-4 h-4 text-neurix-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                         </div>
+                         <div>
+                            <h3 className="text-sm font-bold text-white">Browser Verification Runtime</h3>
+                            <p className="text-[10px] text-neurix-500 font-mono">Running: {previewArtifact.title}</p>
+                         </div>
+                    </div>
+                    <button onClick={() => setPreviewArtifact(null)} className="p-2 rounded hover:bg-white/10 text-neurix-500 hover:text-white transition-colors">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                <div className="flex-1 bg-white relative">
+                    <iframe 
+                        className="w-full h-full border-0"
+                        srcDoc={previewArtifact.content}
+                        title="Live Preview"
+                        sandbox="allow-scripts"
+                    />
+                </div>
+                <div className="px-4 py-2 bg-neurix-900 border-t border-white/10 text-[10px] text-neurix-500 font-mono flex justify-between">
+                     <span>Sandboxed Execution Environment</span>
+                     <span>V8 Engine Active</span>
+                </div>
+            </div>
+        </div>
+    )}
+    </>
   );
 };
 

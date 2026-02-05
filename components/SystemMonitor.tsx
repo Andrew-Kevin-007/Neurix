@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { AgentMetrics, AgentIdentity, MetricHistoryPoint } from '../types';
 
@@ -6,6 +7,29 @@ interface SystemMonitorProps {
   agents: Record<string, AgentIdentity>;
   history: MetricHistoryPoint[];
 }
+
+// Helper for smooth Bezier curves
+const getSmoothPath = (points: {x: number, y: number}[]) => {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+
+  let d = `M ${points[0].x} ${points[0].y}`;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i];
+    const p1 = points[i + 1];
+    
+    // Control points for a smooth S-curve interpolation
+    // This creates a fluid transition between points
+    const cp1x = p0.x + (p1.x - p0.x) * 0.5;
+    const cp1y = p0.y;
+    const cp2x = p0.x + (p1.x - p0.x) * 0.5;
+    const cp2y = p1.y;
+
+    d += ` C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${p1.x} ${p1.y}`;
+  }
+  return d;
+};
 
 const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, agents, history }) => {
   const totalSystemTokens = (Object.values(metrics) as AgentMetrics[]).reduce((acc, m) => acc + m.tokenUsage, 0);
@@ -67,26 +91,29 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, agents, history 
             const currentX = ((now - startTime) / timeWindow) * 100;
             // If the last update was recent (<500ms), hold the value, otherwise drop to 0
             const isRecent = (now - agentHistory[agentHistory.length-1].timestamp) < 500;
+            // Add intermediate point for smoother drop-off if needed, but simple drop is okay with bezier
             points.push({ x: currentX, y: isRecent ? lastPt.y : 0 });
         }
 
         agentDeltas[id] = points;
     });
 
-    // 2. Generate SVG Paths
+    // 2. Generate SVG Paths (Smoothed)
     Object.keys(agentDeltas).forEach(id => {
         const points = agentDeltas[id];
         if (points.length === 0) return;
 
-        let d = '';
-        points.forEach((pt, i) => {
+        // Normalize points to screen coordinates
+        const screenPoints = points.map(pt => {
              // Normalize Y (0 to globalMax) -> (100 to 0 coords)
-             const normalizedY = pt.y / globalMaxDelta;
+             // Use Math.max(globalMaxDelta, 1) to prevent division by zero
+             const normalizedY = pt.y / Math.max(globalMaxDelta, 1);
              // Use 90% of height, with 5% padding at bottom
              const y = 100 - (normalizedY * 90) - 5; 
-             d += `${i === 0 ? 'M' : 'L'} ${pt.x} ${y} `;
+             return { x: pt.x, y };
         });
-        paths[id] = d;
+
+        paths[id] = getSmoothPath(screenPoints);
     });
 
     return { paths, minY: 0, maxY: globalMaxDelta };
@@ -134,7 +161,7 @@ const SystemMonitor: React.FC<SystemMonitorProps> = ({ metrics, agents, history 
                      {Object.keys(graphData.paths).length > 0 ? (
                          <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
                              {Object.entries(graphData.paths).map(([id, d]) => {
-                                 // CORRECTED: Find agent by ID, not by Key
+                                 // Find agent by ID
                                  const agent = (Object.values(agents) as AgentIdentity[]).find(a => a.id === id);
                                  if (!agent) return null;
                                  

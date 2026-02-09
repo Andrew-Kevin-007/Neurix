@@ -21,6 +21,8 @@ const AgentStatusDisplay: React.FC<AgentStatusProps> = ({ state }) => {
         return { text: 'Mission Accomplished', color: 'text-white', bg: 'bg-neurix-success' };
       case AgentState.MAINTENANCE:
         return { text: 'Maintenance Mode', color: 'text-white', bg: 'bg-fuchsia-600' };
+      case AgentState.QA_PHASE:
+        return { text: 'QA Testing', color: 'text-white', bg: 'bg-indigo-600 animate-pulse' };
       case AgentState.PAUSED:
           return { text: 'Paused', color: 'text-white', bg: 'bg-neurix-400' };
       case AgentState.AWAITING_INPUT:
@@ -34,7 +36,7 @@ const AgentStatusDisplay: React.FC<AgentStatusProps> = ({ state }) => {
 
   return (
     <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-full border border-white/5 shadow-sm transition-all duration-300 ${state === AgentState.INIT ? 'bg-neurix-800' : config.bg}`}>
-      {(state === AgentState.PLANNING || state === AgentState.EXECUTING) && (
+      {(state === AgentState.PLANNING || state === AgentState.EXECUTING || state === AgentState.QA_PHASE) && (
          <div className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>

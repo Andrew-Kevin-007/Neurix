@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AgentState, Workflow, WorkflowStep, StepStatus, LogEntry, TimelineEvent, TimelineEventType, AgentIdentity, ExecutionOverlay, ThoughtSignature, AgentMetrics, MetricHistoryPoint, Artifact } from './types';
-import { generateWorkflow, executeWorkflowStep, replanWorkflow, verifyOutput, runMaintenanceScan, getModelForAction, generateRemediationPlan } from './services/gemini';
+import { generateWorkflow, executeWorkflowStep, replanWorkflow, verifyOutput, runMaintenanceScan, getModelForAction, generateRemediationPlan, runProjectQAReview } from './services/gemini';
 import WorkflowGraph from './components/WorkflowGraph';
 import LogViewer from './components/LogViewer';
 import TimelineViewer from './components/TimelineViewer';
@@ -70,11 +70,13 @@ export default function App() {
   const metricsRef = useRef(metrics);
   const executionOverlayRef = useRef(executionOverlay);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const artifactsRef = useRef(artifacts); // Track artifacts for QA
 
   useEffect(() => { stateRef.current = agentState; }, [agentState]);
   useEffect(() => { workflowRef.current = workflow; }, [workflow]);
   useEffect(() => { metricsRef.current = metrics; }, [metrics]);
   useEffect(() => { executionOverlayRef.current = executionOverlay; }, [executionOverlay]);
+  useEffect(() => { artifactsRef.current = artifacts; }, [artifacts]);
 
   // Cleanup Audio Context and Speech Synthesis on unmount
   useEffect(() => {
@@ -442,11 +444,12 @@ export default function App() {
         const hasApprovalWait = stateRef.current === AgentState.AWAITING_INPUT; 
         
         // Only finish if absolutely nothing is running or pending
-        if (!hasRunning && !hasPending && !hasApprovalWait) {
-            setAgentState(AgentState.MAINTENANCE);
-            playSfx('SUCCESS');
-            addLog('SUCCESS', 'Execution Phase Complete. Initiating Autonomous Maintenance Protocol.');
-            speak("Mission objectives met. Entering maintenance mode.");
+        // Ensure we don't re-trigger QA if already there or in maintenance
+        if (!hasRunning && !hasPending && !hasApprovalWait && stateRef.current !== AgentState.QA_PHASE && stateRef.current !== AgentState.MAINTENANCE) {
+            setAgentState(AgentState.QA_PHASE);
+            playSfx('PROCESS');
+            addLog('INFO', 'Execution Phase Complete. Initiating Quality Assurance Protocols.', { agentName: 'AXION', agentColor: AGENTS.VERIFIER.color });
+            speak("Execution complete. Beginning quality assurance review.");
         }
         return;
     }
@@ -571,24 +574,15 @@ export default function App() {
       setWorkflow(prev => {
           if (!prev) return newWorkflow;
           
-          // INTELLIGENT MERGE STRATEGY
-          // 1. Keep the state of existing steps (Completed/Running/Failed)
-          // 2. Accept updates for Pending steps
-          // 3. Add new steps
-          
           const mergedSteps = newWorkflow.steps.map(newStep => {
               const existing = prev.steps.find(s => s.id === newStep.id);
               
               if (existing) {
-                  // If it's already executed or running, we MUST preserve its operational state
-                  // to prevent causality paradoxes.
                   if (existing.status === StepStatus.COMPLETED || existing.status === StepStatus.RUNNING || existing.status === StepStatus.FAILED) {
                       return existing; 
                   }
-                  // If it's pending, we accept the edits from the user
                   return newStep; 
               }
-              // It's a brand new step added by the user
               return newStep;
           });
 
@@ -599,7 +593,6 @@ export default function App() {
       addLog('SUCCESS', 'Live Injection Complete. Graph Updated.', { agentName: 'ROUTER', agentColor: AGENTS.ROUTER.color });
       playSfx('SUCCESS');
       
-      // If we were in REVIEW_PLAN, this acts as an approval to start
       if (agentState === AgentState.REVIEW_PLAN) {
           setAgentState(AgentState.EXECUTING);
           emitTimelineEvent('PHASE_CHANGE', AGENTS.ROUTER, 'Plan Approved & Executing.');
@@ -640,7 +633,7 @@ export default function App() {
           addLog('SUCCESS', 'Counter-measures generated. Resuming execution.');
           
           // Ensure we are in executing state
-          if (agentState === AgentState.MAINTENANCE || agentState === AgentState.COMPLETED) {
+          if (agentState === AgentState.MAINTENANCE || agentState === AgentState.COMPLETED || agentState === AgentState.QA_PHASE) {
                setAgentState(AgentState.EXECUTING);
           }
           
@@ -650,6 +643,46 @@ export default function App() {
           setAgentState(AgentState.FAILED); 
       }
   }, [agentState, updateAgentMetrics, playSfx, speak, addLog, emitTimelineEvent]);
+
+  // --- NEW: QA PHASE LOGIC (Enhanced with Score) ---
+  useEffect(() => {
+     if (agentState !== AgentState.QA_PHASE) return;
+     
+     const performQA = async () => {
+         if (!workflowRef.current) return;
+         
+         try {
+             // ArtifactsRef is safe to access here
+             const qaResult = await runProjectQAReview(workflowRef.current, artifactsRef.current);
+             updateAgentMetrics(AGENTS.VERIFIER.id, { tokens: qaResult.tokens });
+             
+             if (qaResult.approved) {
+                 addLog('SUCCESS', `QA PASSED. Stability Score: ${qaResult.score}/100.`, { agentName: 'AXION', agentColor: AGENTS.VERIFIER.color });
+                 addLog('INFO', `QA Report: ${qaResult.feedback}`);
+                 emitTimelineEvent('CHECKPOINT_RESOLVED', AGENTS.VERIFIER, `Final QA Passed (Score: ${qaResult.score}). Project stable.`);
+                 playSfx('SUCCESS');
+                 speak("Quality assurance passed. System stable.");
+                 setAgentState(AgentState.MAINTENANCE);
+             } else {
+                 playSfx('ERROR');
+                 addLog('WARNING', `QA REJECTED. Score: ${qaResult.score}/100. Issues Found.`, { agentName: 'AXION', agentColor: AGENTS.VERIFIER.color });
+                 addLog('INFO', `QA Feedback: ${qaResult.feedback}`);
+                 emitTimelineEvent('CHECKPOINT_REQUEST', AGENTS.VERIFIER, 'QA Failed. Issues: ' + qaResult.issues.join(', '));
+                 speak("Quality assurance failed. Generating fixes.");
+                 
+                 // Trigger remediation for the specific issues found
+                 handleRemediation(qaResult.issues.join('. '));
+             }
+         } catch (e) {
+             console.error("QA Failed", e);
+             addLog('ERROR', 'QA Verification failed internally. Defaulting to Maintenance.');
+             setAgentState(AgentState.MAINTENANCE); // Fallback
+         }
+     };
+
+     performQA();
+  }, [agentState, handleRemediation, addLog, emitTimelineEvent, playSfx, speak, updateAgentMetrics]);
+
 
   // Maintenance Loop
   useEffect(() => {
@@ -690,7 +723,7 @@ export default function App() {
             agents={AGENTS} 
             onSave={handleLiveWorkflowUpdate} 
             onCancel={() => setIsEditingPlan(false)}
-            isLiveMode={agentState === AgentState.EXECUTING || agentState === AgentState.MAINTENANCE}
+            isLiveMode={agentState === AgentState.EXECUTING || agentState === AgentState.MAINTENANCE || agentState === AgentState.QA_PHASE}
           />
       )}
       

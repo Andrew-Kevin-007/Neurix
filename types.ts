@@ -4,7 +4,8 @@ export enum AgentState {
   PLANNING = 'PLANNING',
   REVIEW_PLAN = 'REVIEW_PLAN',
   EXECUTING = 'EXECUTING',
-  AWAITING_INPUT = 'AWAITING_INPUT', // NEW: Human-in-the-Loop
+  AWAITING_INPUT = 'AWAITING_INPUT', // Human-in-the-Loop
+  QA_PHASE = 'QA_PHASE', // NEW: Final check before maintenance
   PAUSED = 'PAUSED',
   CHECKPOINT = 'CHECKPOINT',
   MAINTENANCE = 'MAINTENANCE',
@@ -17,7 +18,7 @@ export enum StepStatus {
   RUNNING = 'RUNNING',
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED',
-  WAITING_FOR_APPROVAL = 'WAITING_FOR_APPROVAL', // NEW
+  WAITING_FOR_APPROVAL = 'WAITING_FOR_APPROVAL',
 }
 
 export interface WorkflowStep {
@@ -37,7 +38,7 @@ export interface WorkflowStep {
   assignedAgentId?: string;
   executedModel?: string;
   toolId?: string;
-  approvalRequired?: boolean; // NEW: Flag for critical steps
+  approvalRequired?: boolean;
 }
 
 export interface Workflow {

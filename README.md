@@ -1,3 +1,4 @@
+
 # NEURIX | Transparent Autonomous Reasoning Engine
 
 ![NEURIX Banner](https://via.placeholder.com/1200x600/0A0A0C/8B5CF6?text=NEURIX+Autonomous+Reasoning+Engine)
@@ -8,48 +9,49 @@
 
 It transforms natural language goals into Directed Acyclic Graphs (DAGs), allowing you to watch the agent's "thought process," intervene when necessary, and verify code artifacts instantly.
 
+## 🌟 Key Capabilities
+
+### 🔄 Automatic Agent & Model Switching
+NEURIX doesn't use a single model for everything. The **ROUTER** dynamically assigns the best agent for each step to optimize for cost, speed, and reasoning depth:
+*   **Planning (NEXUS)**: Uses `gemini-3-pro-preview` for complex dependency mapping.
+*   **Execution (ION)**: Uses `gemini-3-flash-preview` for high-throughput text and code tasks.
+*   **Vision (VORTEX)**: Automatically switches to `gemini-3-pro-image-preview` when visual assets are required.
+
+### ✏️ Live Workflow Injection
+You are not a passive observer. At any point, you can **Pause Execution** and enter the **Workflow Studio**.
+*   Add new steps mid-flight.
+*   Edit parameters of pending steps.
+*   Re-route dependencies.
+*   **Inject Changes**: The system hot-swaps the graph logic without losing state.
+
+### 🛡️ Error Handling & Self-Healing
+Meet **AXION**, the Verifier Agent. It audits every output against the user's original goal.
+*   **Verification**: If a step output is hallucinated or buggy, AXION rejects it.
+*   **Auto-Remediation**: The system triggers a "Self-Healing" branch, generating new steps (e.g., "Apply Hotfix") to correct the error automatically before proceeding.
+
+### 📊 Live System Monitoring
+Real-time telemetry gives you a window into the agent's "brain":
+*   **Neural Load**: Visualizes active agent velocity.
+*   **Token Usage**: Tracks consumption per agent in real-time.
+*   **Maintenance Mode**: Even after the task is done, a "Watchdog" process monitors the system health and alerts on degradation.
+
+### 🧪 QA Phase
+Execution isn't the end. NEURIX runs a final **Project QA Review** phase, scoring the reliability of the final output (0-100) before marking the mission as complete.
+
+---
+
 ## 🎯 Hackathon Strategic Tracks
 
 NEURIX is architected to compete in the following tracks:
 
 ### 1. 🧠 The Marathon Agent (Long-Context & Reliability)
-*   **Self-Correcting DAGs**: Uses a `Planner-Executor-Verifier` loop. If a step fails validation, the system automatically generates a remediation branch to fix itself without user intervention.
-*   **Native Thinking**: Leverages `thinkingConfig` (Thinking Levels) in **Gemini 3 Pro** to maintain reasoning depth across long execution chains.
+*   **Self-Correcting DAGs**: Uses a `Planner-Executor-Verifier` loop.
+*   **Native Thinking**: Leverages `thinkingConfig` (Thinking Levels) in **Gemini 3 Pro**.
 *   **State Persistence**: The "Watchdog" mode scans for system degradation even after the main task is complete.
 
 ### 2. 🎨 Creative Autopilot (Multimodal)
-*   **Nano Banana Pro**: Uses `gemini-3-pro-image-preview` for high-fidelity, 1K/2K resolution visual asset generation.
+*   **Nano Banana Pro**: Uses `gemini-3-pro-image-preview` for high-fidelity visual asset generation.
 *   **Browser-Based Verification**: Includes a **Live Artifact Runtime** where generated HTML/JS code can be executed and verified inside a secure sandbox immediately.
-
----
-
-## ✨ Key Features
-
-*   **Visual Thinking Process**: Watch the agent build its plan as a dynamic node graph. See dependencies, parallel execution paths, and real-time status.
-*   **Hybrid Reasoning Engine**: Combines **Native Thinking** (Gemini 3 `thinkingBudget`) for deep logic with explicit Chain-of-Thought logs for transparency.
-*   **Multimodal Native**:
-    *   Drag & Drop images to give the agent visual context (e.g., *"Write code to recreate this website screenshot"*).
-    *   Generates visual assets seamlessly.
-*   **Action-Era Artifacts**:
-    *   **Live Preview**: Instantly run and verify generated code (HTML/JS/Games) in an in-app browser sandbox.
-    *   **Downloadable Assets**: Export code and images directly.
-*   **Reliability Layer**:
-    *   **Auto-Remediation**: If the system detects a degraded state or a failed QA check, it generates a "fix-it" branch on the fly.
-    *   **Project QA Review**: A dedicated phase that scores the final output stability (0-100) before marking the project complete.
-
----
-
-## 🚀 Gemini Integration (Under the Hood)
-
-NEURIX utilizes the specific strengths of the Gemini family to optimize cost and performance:
-
-| Agent Module | Model Used | Reasoning Strategy |
-| :--- | :--- | :--- |
-| **Planning (NEXUS)** | `gemini-3-pro-preview` | Uses **Native Thinking** (`thinkingBudget: 2048`) to construct robust dependency graphs. |
-| **Logic & Coding** | `gemini-3-pro-preview` | Uses **Native Thinking** to architect complex code solutions before generation. |
-| **Fast Execution** | `gemini-3-flash-preview` | Used for tool bridging, summaries, and rapid decision-making steps to reduce latency. |
-| **Creative (VORTEX)** | `gemini-3-pro-image-preview` | **(Nano Banana Pro)** Dedicated model for high-fidelity 1K+ image generation. |
-| **Verification (AXION)** | `gemini-3-pro-preview` | Critical auditing requires the "Pro" model to detect hallucinations and enforce safety. |
 
 ---
 

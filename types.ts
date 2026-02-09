@@ -25,7 +25,7 @@ export interface WorkflowStep {
   id: string;
   label: string;
   description: string;
-  actionType: 'RESEARCH' | 'CODE' | 'ANALYSIS' | 'DECISION' | 'CREATION' | 'INTEGRATION';
+  actionType: 'RESEARCH' | 'CODE' | 'ANALYSIS' | 'DECISION' | 'CREATION' | 'INTEGRATION' | 'IMAGE_GEN';
   dependencies: string[];
   status: StepStatus;
   // v1 Schema extensions

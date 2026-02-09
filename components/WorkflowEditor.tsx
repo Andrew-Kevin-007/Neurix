@@ -117,6 +117,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ workflow, agents, onSav
           case 'ANALYSIS': return 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10';
           case 'DECISION': return 'text-amber-400 border-amber-500/30 bg-amber-500/10';
           case 'CREATION': return 'text-rose-400 border-rose-500/30 bg-rose-500/10';
+          case 'IMAGE_GEN': return 'text-violet-400 border-violet-500/30 bg-violet-500/10';
           case 'INTEGRATION': return 'text-orange-400 border-orange-500/30 bg-orange-500/10';
           default: return 'text-neurix-400 border-white/10 bg-white/5';
       }
@@ -129,6 +130,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ workflow, agents, onSav
           case 'ANALYSIS': return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />;
           case 'DECISION': return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />;
           case 'CREATION': return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />;
+          case 'IMAGE_GEN': return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />;
           case 'INTEGRATION': return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />;
           default: return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />;
       }
@@ -261,7 +263,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ workflow, agents, onSav
                                                     value={selectedStep.actionType}
                                                     onChange={(e) => handleFieldChange(selectedStep.id, 'actionType', e.target.value)}
                                                 >
-                                                    {['RESEARCH', 'CODE', 'ANALYSIS', 'DECISION', 'CREATION', 'INTEGRATION'].map(t => (
+                                                    {['RESEARCH', 'CODE', 'ANALYSIS', 'DECISION', 'CREATION', 'IMAGE_GEN', 'INTEGRATION'].map(t => (
                                                         <option key={t} value={t}>{t}</option>
                                                     ))}
                                                 </select>

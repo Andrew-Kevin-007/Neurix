@@ -1,3 +1,4 @@
+
 # 🏆 NEURIX: The Winning Hackathon Demo Script (3:00)
 
 **Target Tracks:** 🧠 The Marathon Agent (Reliability) & 🎨 Creative Autopilot (Multimodal)
@@ -12,50 +13,48 @@
 
 "We all know the problem: AI Agents today are 'Black Boxes.' You type a prompt, stare at a loading spinner, and pray the output works. If it fails, you have no idea why."
 
-**(Visual: Upload an image file - e.g., a whiteboard sketch. Type: "Build a landing page based on this sketch, write 3 marketing tweets, and generate a hero image.")**
+**(Visual: Type: "Create a hackathon website for a cyberpunk coding event".)**
 
-"NEURIX is different. It’s a **Transparent Autonomous Reasoning Engine** powered entirely by the **Gemini 3 Model Family**. It doesn't just stream text; it architects, executes, and verifies complex workflows right in front of your eyes."
-
----
-
-### 0:40 - 1:20 | Track 1: The Marathon Agent (Planning & Thinking)
-**(Visual: Click 'INITIATE'. Show the status change to 'Generating Workflow'. Point to the log showing "Thinking Budget" or "Gemini 3 Pro".)**
-
-"For the **Marathon Agent** track, reliability is key. Unlike standard chatbots, NEURIX uses **Gemini 3 Pro** with `thinkingBudget` enabled to *plan* before it acts."
-
-**(Visual: The Graph explodes onto the screen. Mouse over the nodes showing parallel paths.)**
-
-"Watch this. It generates a **Directed Acyclic Graph**. It knows it can write the code and generate the marketing copy in parallel. It’s not guessing; it’s engineering. We use specific personas: **NEXUS** for planning and **VORTEX** for coding, leveraging Gemini's huge context window to keep the whole project state in memory."
+"NEURIX is different. It is a **Transparent Autonomous Reasoning Engine** powered entirely by the **Gemini 3 Model Family**. It doesn't just stream text; it architects, executes, and verifies complex workflows right in front of your eyes."
 
 ---
 
-### 1:20 - 2:00 | Track 2: Creative Autopilot (Multimodal & Artifacts)
-**(Visual: Steps turn green/running. Click on a 'Creation' node (Image Generation). Show the image appearing in the side panel.)**
+### 0:40 - 1:20 | Automatic Agent Switching
+**(Visual: Click 'INITIATE'. The Graph explodes onto the screen. Point to the different colored nodes.)**
 
-"For the **Creative Autopilot** track, we're using **Gemini 3 Pro Image Preview** (Nano Banana Pro) to generate high-fidelity assets on the fly."
+"First, notice the **Automatic Agent Switching**. The system isn't using one model for everything."
 
-**(Visual: Click on the 'Code' node. Then click the 'Artifacts' tab on the right. Hover over the 'Live Preview' eye icon.)**
+"The **Planner (NEXUS)** uses **Gemini 3 Pro** for deep reasoning to build this graph. But for the coding steps, it automatically hot-swaps to **Gemini 3 Flash** for speed. And for this visual asset step? It switches to the **Nano Banana Pro** model."
 
-"But here’s the magic. We don't just generate code blocks. We have a **Live Artifact Runtime**."
-
-**(Visual: Click the eye icon. The modal opens showing the rendered HTML/Game running perfectly.)**
-
-"NEURIX renders the code Gemini wrote instantly in a secure sandbox. I can verify the landing page works without ever leaving the agent. This shortens the loop between 'Idea' and 'Shippable Product' to seconds."
+"It optimizes for cost and intelligence at every single node, completely autonomously."
 
 ---
 
-### 2:00 - 2:40 | Reliability: Self-Healing & QA
-**(Visual: Close the modal. Show the 'QA Phase' active at the end of the graph.)**
+### 1:20 - 2:00 | Live Injection & Artifacts
+**(Visual: Click 'EXECUTE'. As nodes turn green, click on a Code Node. Open the 'Artifacts' tab. Click the 'Live Preview' eye icon.)**
 
-"Finally, how do we ensure stability? Meet **AXION**, our Verifier Agent."
+"But here’s the magic. We have a **Live Artifact Runtime**."
 
-**(Visual: Show the Log Viewer. Highlight a "Verification Passed" or "Self-Correction" log.)**
+**(Visual: The modal opens showing the rendered Hackathon Website running perfectly.)**
 
-"AXION audits every step. If Gemini generates broken code, AXION catches it and triggers a **Self-Healing Branch**—automatically adding new nodes to fix the error. It sleeps with one eye open."
+"NEURIX renders the code instantly in a secure sandbox. I can verify the website works without leaving the agent."
+
+**(Visual: Quickly open the 'Edit Plan' / Workflow Editor.)**
+
+"And if I change my mind? I can pause execution, **Inject New Steps** mid-flight, and resume. The agent adapts to *my* workflow, not the other way around."
+
+---
+
+### 2:00 - 2:40 | Error Handling, Self-Healing & QA
+**(Visual: Close modal. Show the 'QA Phase' active at the end.)**
+
+"Finally, reliability. Meet **AXION**, our Verifier Agent."
+
+"AXION audits every step. If Gemini generates broken code, AXION catches it and triggers a **Self-Healing Branch**—automatically adding 'Fix-It' nodes to repair the error."
 
 **(Visual: Show the final 'QA PASSED' score in the logs.)**
 
-"We end every run with a rigorous QA Score. If it’s not an 85 or higher, it doesn't ship."
+"We end every run with a rigorous QA Score. If it’s not perfect, it doesn't ship."
 
 ---
 

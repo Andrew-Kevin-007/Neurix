@@ -238,6 +238,7 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                 const isPending = node.status === StepStatus.PENDING;
                 const isWaiting = node.status === StepStatus.WAITING_FOR_APPROVAL;
                 const isIntegration = node.actionType === 'INTEGRATION';
+                const isImageGen = node.actionType === 'IMAGE_GEN';
                 const isRemediation = node.id.startsWith('fix-') || node.id.startsWith('replan-');
                 
                 const overlay = executionOverlay[node.id];
@@ -271,6 +272,9 @@ const WorkflowGraph: React.FC<WorkflowGraphProps> = ({ steps, currentStepId, onS
                 } else if (isIntegration) {
                    mainColor = 'border-orange-500/40';
                    textColor = 'text-orange-300';
+                } else if (isImageGen) {
+                   mainColor = 'border-fuchsia-500/40';
+                   textColor = 'text-fuchsia-300';
                 }
 
                 return (

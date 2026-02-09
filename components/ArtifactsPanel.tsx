@@ -28,6 +28,8 @@ const ArtifactsPanel: React.FC<ArtifactsPanelProps> = ({ artifacts }) => {
           if (extension === 'javascript') extension = 'js';
           if (extension === 'typescript') extension = 'ts';
           if (extension === 'html') extension = 'html';
+          
+          if (extension === 'html') mimeType = 'text/html';
       }
 
       const blob = new Blob([content], { type: mimeType });
@@ -57,6 +59,8 @@ const ArtifactsPanel: React.FC<ArtifactsPanelProps> = ({ artifacts }) => {
   };
 
   const isPreviewable = (artifact: Artifact) => {
+    // Treat unknown language text as potential HTML if it starts with <
+    if (artifact.type === 'CODE' && artifact.content.trim().startsWith('<!DOCTYPE html>')) return true;
     return artifact.type === 'CODE' && (artifact.language === 'html' || artifact.language === 'javascript');
   };
 

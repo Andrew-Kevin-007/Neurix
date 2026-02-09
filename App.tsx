@@ -391,12 +391,9 @@ export default function App() {
           
           const errorMsg = String(e.message || e);
           
-          // Enhanced Error Handling
           if (errorMsg.includes('QUOTA_EXCEEDED')) {
               addLog('ERROR', 'API Quota Exceeded. Entering Offline Simulation Mode.');
               speak("Quota limit reached. Switching to simulation.");
-              // Don't mark as failed, maybe pause or switch mode? 
-              // For now, we fail and let handleFailure decide
           } else if (errorMsg.includes('SAFETY_BLOCK')) {
                addLog('WARNING', 'Content Safety Violation. Re-routing task...');
                speak("Safety violation detected.");
@@ -427,14 +424,24 @@ export default function App() {
   };
 
   const executeDispatcher = useCallback(() => {
+    // IMPORTANT: Dispatcher now respects the editing state but doesn't STOP if we are just "Live Editing"
     if (stateRef.current !== AgentState.EXECUTING) return;
+    
     const currentWorkflow = workflowRef.current;
     if (!currentWorkflow) return;
-    const executableSteps = currentWorkflow.steps.filter(step => step.status === StepStatus.PENDING && (step.dependencies.length === 0 || step.dependencies.every(depId => currentWorkflow.steps.find(s => s.id === depId)?.status === StepStatus.COMPLETED)));
+    
+    // Find steps that are PENDING and have all dependencies met
+    const executableSteps = currentWorkflow.steps.filter(step => 
+        step.status === StepStatus.PENDING && 
+        (step.dependencies.length === 0 || step.dependencies.every(depId => currentWorkflow.steps.find(s => s.id === depId)?.status === StepStatus.COMPLETED))
+    );
+    
     if (executableSteps.length === 0) {
         const hasRunning = currentWorkflow.steps.some(s => s.status === StepStatus.RUNNING);
         const hasPending = currentWorkflow.steps.some(s => s.status === StepStatus.PENDING);
         const hasApprovalWait = stateRef.current === AgentState.AWAITING_INPUT; 
+        
+        // Only finish if absolutely nothing is running or pending
         if (!hasRunning && !hasPending && !hasApprovalWait) {
             setAgentState(AgentState.MAINTENANCE);
             playSfx('SUCCESS');
@@ -443,14 +450,19 @@ export default function App() {
         }
         return;
     }
+    
     const busyAgentIds = [...activeAgentIds]; 
     const assignments: { step: WorkflowStep, agent: AgentIdentity }[] = [];
+    
     executableSteps.forEach(step => {
         const agent = selectAgentForTask(step, busyAgentIds);
         busyAgentIds.push(agent.id); 
         assignments.push({ step, agent });
     });
+    
+    // Mark as running immediately to prevent double-dispatch in next tick
     setWorkflow(prev => prev ? ({ ...prev, steps: prev.steps.map(s => executableSteps.some(e => e.id === s.id) ? { ...s, status: StepStatus.RUNNING } : s) }) : null);
+    
     assignments.forEach(({ step, agent }) => { triggerStepExecution(step, currentWorkflow, agent); });
   }, [activeAgentIds, triggerStepExecution, addLog, speak, playSfx]);
 
@@ -494,12 +506,7 @@ export default function App() {
   useEffect(() => { if (agentState === AgentState.EXECUTING) { const interval = setInterval(executeDispatcher, 1000); executeDispatcher(); return () => clearInterval(interval); } }, [agentState, executeDispatcher]);
 
   const toggleMute = () => { setIsMuted(!isMuted); window.speechSynthesis.cancel(); };
-  const togglePause = () => {
-      playSfx('CLICK');
-      if (agentState === AgentState.EXECUTING) { setAgentState(AgentState.PAUSED); addLog('WARNING', 'Execution Paused by Operator.'); } 
-      else if (agentState === AgentState.PAUSED) { setAgentState(AgentState.EXECUTING); addLog('INFO', 'Execution Resumed.'); }
-  };
-  const stopMaintenance = () => { playSfx('CLICK'); setAgentState(AgentState.COMPLETED); addLog('INFO', 'Maintenance Mode Halted by Operator.'); speak("Maintenance mode stopped."); };
+  
   const resetSystem = () => { 
       playSfx('BOOT');
       setWorkflow(null); 
@@ -559,6 +566,46 @@ export default function App() {
     }
   };
 
+  // --- LIVE INJECTION LOGIC ---
+  const handleLiveWorkflowUpdate = (newWorkflow: Workflow) => {
+      setWorkflow(prev => {
+          if (!prev) return newWorkflow;
+          
+          // INTELLIGENT MERGE STRATEGY
+          // 1. Keep the state of existing steps (Completed/Running/Failed)
+          // 2. Accept updates for Pending steps
+          // 3. Add new steps
+          
+          const mergedSteps = newWorkflow.steps.map(newStep => {
+              const existing = prev.steps.find(s => s.id === newStep.id);
+              
+              if (existing) {
+                  // If it's already executed or running, we MUST preserve its operational state
+                  // to prevent causality paradoxes.
+                  if (existing.status === StepStatus.COMPLETED || existing.status === StepStatus.RUNNING || existing.status === StepStatus.FAILED) {
+                      return existing; 
+                  }
+                  // If it's pending, we accept the edits from the user
+                  return newStep; 
+              }
+              // It's a brand new step added by the user
+              return newStep;
+          });
+
+          return { ...newWorkflow, steps: mergedSteps };
+      });
+      
+      setIsEditingPlan(false);
+      addLog('SUCCESS', 'Live Injection Complete. Graph Updated.', { agentName: 'ROUTER', agentColor: AGENTS.ROUTER.color });
+      playSfx('SUCCESS');
+      
+      // If we were in REVIEW_PLAN, this acts as an approval to start
+      if (agentState === AgentState.REVIEW_PLAN) {
+          setAgentState(AgentState.EXECUTING);
+          emitTimelineEvent('PHASE_CHANGE', AGENTS.ROUTER, 'Plan Approved & Executing.');
+      }
+  };
+
   const handleVoiceTranscript = (text: string) => {
       setGoal(prev => (prev ? `${prev} ${text}` : text));
   };
@@ -567,7 +614,8 @@ export default function App() {
   const handleRemediation = useCallback(async (issue: string) => {
       if (!workflowRef.current) return;
       playSfx('ALERT');
-      setAgentState(AgentState.PLANNING); // Show active state
+      // We don't change state to PLANNING here to keep execution flowing if possible, 
+      // but we visually indicate planning via logs/speech
       speak("Anomaly detected. Initiating remediation protocols.");
       addLog('WARNING', `Maintenance Alert: ${issue}. Generating fixes...`, { agentName: 'AXION', agentColor: AGENTS.VERIFIER.color });
       
@@ -591,14 +639,17 @@ export default function App() {
           emitTimelineEvent('PHASE_CHANGE', AGENTS.PLANNER, 'Remediation branch created.');
           addLog('SUCCESS', 'Counter-measures generated. Resuming execution.');
           
-          setAgentState(AgentState.EXECUTING);
+          // Ensure we are in executing state
+          if (agentState === AgentState.MAINTENANCE || agentState === AgentState.COMPLETED) {
+               setAgentState(AgentState.EXECUTING);
+          }
           
       } catch (e) {
           console.error("Remediation failed", e);
           addLog('ERROR', 'Failed to generate remediation plan. Maintenance halted.');
           setAgentState(AgentState.FAILED); 
       }
-  }, [updateAgentMetrics, playSfx, speak, addLog, emitTimelineEvent]);
+  }, [agentState, updateAgentMetrics, playSfx, speak, addLog, emitTimelineEvent]);
 
   // Maintenance Loop
   useEffect(() => {
@@ -628,10 +679,20 @@ export default function App() {
       addLog('INFO', 'Output copied to clipboard.');
   };
 
+  const stopMaintenance = () => { playSfx('CLICK'); setAgentState(AgentState.COMPLETED); addLog('INFO', 'Maintenance Mode Halted by Operator.'); speak("Maintenance mode stopped."); };
+
   return (
     <div className="relative w-screen h-[100dvh] overflow-hidden font-sans selection:bg-neurix-accent/30 text-neurix-300">
       {!hasVisited && <OnboardingModal agents={AGENTS} onStart={() => { setHasVisited(true); runBootSequence(); }} />}
-      {isEditingPlan && workflow && <WorkflowEditor workflow={workflow} agents={AGENTS} onSave={(updated) => { setWorkflow(updated); setIsEditingPlan(false); addLog('SUCCESS', 'Plan Updated manually by operator.'); }} onCancel={() => setIsEditingPlan(false)} />}
+      {isEditingPlan && workflow && (
+          <WorkflowEditor 
+            workflow={workflow} 
+            agents={AGENTS} 
+            onSave={handleLiveWorkflowUpdate} 
+            onCancel={() => setIsEditingPlan(false)}
+            isLiveMode={agentState === AgentState.EXECUTING || agentState === AgentState.MAINTENANCE}
+          />
+      )}
       
       {pendingApprovalStep && <ApprovalModal step={pendingApprovalStep.step} agent={pendingApprovalStep.agent} onApprove={() => handleApproval(true)} onReject={() => handleApproval(false)} />}
 
@@ -767,16 +828,32 @@ export default function App() {
                      </div>
                  )}
                  
-                 {/* Approval UI */}
-                 {agentState === AgentState.REVIEW_PLAN && !isEditingPlan && (
+                 {/* Approval / Live Edit UI */}
+                 {/* When REVIEWING PLAN (Initial) OR EXECUTING (Live Edit Opportunity) */}
+                 {(agentState === AgentState.REVIEW_PLAN || agentState === AgentState.EXECUTING) && !isEditingPlan && (
                      <div className="pointer-events-auto animate-pop-in mb-20 lg:mb-0">
                          <div className="glass-panel px-6 py-3 rounded-full flex items-center gap-6 shadow-2xl">
-                             <span className="text-[11px] text-neurix-300 font-medium tracking-wide hidden sm:inline">Awaiting Authorization</span>
+                             <div className="flex flex-col">
+                                <span className="text-[11px] text-neurix-300 font-medium tracking-wide">
+                                    {agentState === AgentState.EXECUTING ? 'System Running' : 'Awaiting Authorization'}
+                                </span>
+                                {agentState === AgentState.EXECUTING && (
+                                    <span className="text-[9px] text-neurix-500">Click Edit to hot-swap logic</span>
+                                )}
+                             </div>
+                             
                              <div className="h-4 w-px bg-white/10 hidden sm:block" />
                              <div className="flex gap-2">
-                                <button onClick={() => setIsEditingPlan(true)} className="px-3 py-1.5 rounded-full hover:bg-white/5 text-[10px] font-bold text-neurix-400 hover:text-white transition-colors">EDIT</button>
-                                <button onClick={() => setAgentState(AgentState.INIT)} className="px-3 py-1.5 rounded-full hover:bg-white/5 text-[10px] font-bold text-neurix-400 hover:text-white transition-colors">ABORT</button>
-                                <button onClick={handleApprovePlan} className="px-4 py-1.5 rounded-full bg-neurix-success text-black text-[10px] font-bold hover:bg-emerald-400 transition-colors">EXECUTE</button>
+                                <button onClick={() => setIsEditingPlan(true)} className="px-3 py-1.5 rounded-full hover:bg-white/5 text-[10px] font-bold text-neurix-400 hover:text-white transition-colors uppercase">
+                                    {agentState === AgentState.EXECUTING ? 'Live Edit' : 'Edit Plan'}
+                                </button>
+                                
+                                {agentState === AgentState.REVIEW_PLAN && (
+                                    <>
+                                    <button onClick={() => setAgentState(AgentState.INIT)} className="px-3 py-1.5 rounded-full hover:bg-white/5 text-[10px] font-bold text-neurix-400 hover:text-white transition-colors">ABORT</button>
+                                    <button onClick={handleApprovePlan} className="px-4 py-1.5 rounded-full bg-neurix-success text-black text-[10px] font-bold hover:bg-emerald-400 transition-colors">EXECUTE</button>
+                                    </>
+                                )}
                              </div>
                          </div>
                      </div>

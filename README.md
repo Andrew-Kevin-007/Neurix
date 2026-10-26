@@ -65,8 +65,8 @@ NEURIX is architected to compete in the following tracks:
 
 1.  **Clone the Repository**
     ```bash
-    git clone https://github.com/yourusername/neurix.git
-    cd neurix
+    git clone https://github.com/Andrew-Kevin-007/Neurix.git
+    cd Neurix
     ```
 
 2.  **Install Dependencies**

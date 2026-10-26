@@ -9,7 +9,7 @@
 ### 0:00 - 0:40 | The Hook & The Architecture
 **(Visual: Start on the blank 'Ready' screen. Mouse hovers over the 'NEURIX OS' badge.)**
 
-"Hi, I'm [Your Name], and this is **NEURIX**."
+"Hi, I'm Kevin, and this is **NEURIX**."
 
 "We all know the problem: AI Agents today are 'Black Boxes.' You type a prompt, stare at a loading spinner, and pray the output works. If it fails, you have no idea why."
 
